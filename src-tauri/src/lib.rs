@@ -1,23 +1,39 @@
 mod db;
 mod error;
 mod ignore;
+mod open;
 mod paths;
 mod scan;
 mod state;
+mod thumbs;
 mod watch;
 
+use std::fs;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 
 use db::{AppInfo, Db, FileRow, LibraryRoot};
+use open::SlicerApp;
 use scan::ScanProgress;
 use state::ScanState;
+use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, Manager, State};
+use thumbs::ThumbReady;
 use watch::WatchHub;
+
+const MAX_PREVIEW_BYTES: u64 = 200 * 1024 * 1024;
 
 fn lock_err() -> String {
     "database lock poisoned".to_string()
+}
+
+fn file_abs(db: &Db, id: i64) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .map(|f| f.abs_path)
+        .ok_or_else(|| "file not found".into())
 }
 
 #[tauri::command]
@@ -84,6 +100,69 @@ fn rescan(app: AppHandle, scan: State<ScanState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn list_slicers() -> Vec<SlicerApp> {
+    open::detected_slicers()
+}
+
+#[tauri::command]
+fn open_in_slicer(db: State<Db>, id: i64, slicer_id: String) -> Result<(), String> {
+    let path = file_abs(&db, id)?;
+    open::open_with(&slicer_id, Path::new(&path)).map_err(String::from)
+}
+
+#[tauri::command]
+fn reveal_in_explorer(db: State<Db>, id: i64) -> Result<(), String> {
+    let path = file_abs(&db, id)?;
+    open::reveal(Path::new(&path)).map_err(String::from)
+}
+
+#[tauri::command]
+fn read_model_bytes(db: State<Db>, id: i64) -> Result<Response, String> {
+    let path = file_abs(&db, id)?;
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_PREVIEW_BYTES {
+        return Err("file too large to preview (200MB cap)".into());
+    }
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes))
+}
+
+#[tauri::command]
+fn save_thumb_png(app: AppHandle, db: State<Db>, id: i64, png: Vec<u8>) -> Result<ThumbReady, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    let ready = thumbs::save_rendered_png(&conn, id, &png).map_err(String::from)?;
+    drop(conn);
+    let _ = app.emit("thumb-ready", ready.clone());
+    Ok(ready)
+}
+
+#[tauri::command]
+fn set_thumb_status(
+    app: AppHandle,
+    db: State<Db>,
+    id: i64,
+    status: String,
+    triangle_count: Option<i64>,
+) -> Result<ThumbReady, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::update_thumb(&conn, id, &status, None, None, triangle_count).map_err(String::from)?;
+    let plate_count = db::get_file(&conn, id)
+        .ok()
+        .flatten()
+        .map(|f| f.plate_count)
+        .unwrap_or(0);
+    let ready = ThumbReady {
+        id,
+        thumb_path: None,
+        thumb_status: status,
+        plate_count,
+    };
+    drop(conn);
+    let _ = app.emit("thumb-ready", ready.clone());
+    Ok(ready)
+}
+
 fn spawn_scan(app: AppHandle, root_ids: Option<Vec<i64>>) {
     let scan = app.state::<ScanState>();
     if !scan.begin() {
@@ -137,6 +216,21 @@ fn spawn_scan(app: AppHandle, root_ids: Option<Vec<i64>>) {
         scan.finish();
         let _ = app.emit("scan-progress", last);
         let _ = app.emit("scan-complete", ());
+        spawn_thumb_extract(app);
+    });
+}
+
+fn spawn_thumb_extract(app: AppHandle) {
+    thread::spawn(move || {
+        let db = app.state::<Db>();
+        match thumbs::extract_pending(&db) {
+            Ok(ready) => {
+                for thumb in ready {
+                    let _ = app.emit("thumb-ready", thumb);
+                }
+            }
+            Err(err) => eprintln!("embedded thumb extract failed: {err}"),
+        }
     });
 }
 
@@ -162,6 +256,8 @@ pub fn run() {
 
             if empty_index && has_roots {
                 spawn_scan(handle, None);
+            } else {
+                spawn_thumb_extract(handle);
             }
             Ok(())
         })
@@ -173,7 +269,13 @@ pub fn run() {
             pause_scan,
             resume_scan,
             add_library_folder,
-            rescan
+            rescan,
+            list_slicers,
+            open_in_slicer,
+            reveal_in_explorer,
+            read_model_bytes,
+            save_thumb_png,
+            set_thumb_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

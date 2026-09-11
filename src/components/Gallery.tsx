@@ -2,16 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { formatBytes } from "../lib/format";
 import { extLabel, fileNameFromRel } from "../lib/files";
+import { thumbUrl } from "../lib/thumbUrl";
 import type { FileRow } from "../types";
 
 const CARD_WIDTH = 200;
-const CARD_HEIGHT = 128;
+const CARD_HEIGHT = 196;
 
 type Props = {
   files: FileRow[];
+  thumbsDir: string | null;
+  selectedId: number | null;
+  onSelect: (file: FileRow) => void;
 };
 
-export function Gallery({ files }: Props) {
+export function Gallery({ files, thumbsDir, selectedId, onSelect }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -34,7 +38,7 @@ export function Gallery({ files }: Props) {
     count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => CARD_HEIGHT,
-    overscan: 8,
+    overscan: 6,
   });
 
   if (files.length === 0) {
@@ -64,25 +68,45 @@ export function Gallery({ files }: Props) {
                 height: `${row.size}px`,
               }}
             >
-              {slice.map((file) => (
-                <article
-                  key={file.id}
-                  className="flex h-[116px] flex-col justify-between rounded-lg border border-zinc-800 bg-zinc-900/80 p-3"
-                  title={file.absPath}
-                >
-                  <span className="w-fit rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-teal-300">
-                    {extLabel(file.ext)}
-                  </span>
-                  <div>
-                    <p className="truncate text-sm font-medium text-zinc-100">
-                      {fileNameFromRel(file.relPath)}
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      {formatBytes(file.size)}
-                    </p>
-                  </div>
-                </article>
-              ))}
+              {slice.map((file) => {
+                const src =
+                  file.thumbPath && thumbsDir
+                    ? thumbUrl(thumbsDir, file.thumbPath)
+                    : null;
+                const selected = file.id === selectedId;
+                return (
+                  <button
+                    key={file.id}
+                    type="button"
+                    onClick={() => onSelect(file)}
+                    title={file.absPath}
+                    className={`flex h-[184px] flex-col overflow-hidden rounded-lg border text-left ${
+                      selected
+                        ? "border-teal-400 bg-zinc-900"
+                        : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-600"
+                    }`}
+                  >
+                    <div className="flex h-28 items-center justify-center bg-zinc-950">
+                      {src ? (
+                        <img src={src} alt="" className="h-full w-full object-contain" />
+                      ) : (
+                        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-teal-300">
+                          {extLabel(file.ext)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0 px-3 py-2">
+                      <p className="truncate text-sm font-medium text-zinc-100">
+                        {fileNameFromRel(file.relPath)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        {extLabel(file.ext)} · {formatBytes(file.size)}
+                        {file.plateCount > 1 ? ` · ${file.plateCount} plates` : ""}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           );
         })}

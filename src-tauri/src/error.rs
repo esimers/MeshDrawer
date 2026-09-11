@@ -10,6 +10,8 @@ pub enum AppError {
     Db(#[from] rusqlite::Error),
     #[error("path error: {0}")]
     Path(String),
+    #[error("zip error: {0}")]
+    Zip(#[from] zip::result::ZipError),
 }
 
 impl AppError {

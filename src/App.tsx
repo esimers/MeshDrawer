@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { DetailPane } from "./components/DetailPane";
 import { Gallery } from "./components/Gallery";
-import type { AppInfo, FileRow, LibraryRoot, ScanProgress } from "./types";
+import { needsMeshThumb, renderOneMeshThumb } from "./lib/meshThumbs";
+import type {
+  AppInfo,
+  FileRow,
+  LibraryRoot,
+  ScanProgress,
+  SlicerApp,
+  ThumbReady,
+} from "./types";
 import "./App.css";
 
 const emptyProgress: ScanProgress = {
@@ -16,25 +25,44 @@ const emptyProgress: ScanProgress = {
   rootPath: "",
 };
 
+function patchThumb(files: FileRow[], ready: ThumbReady): FileRow[] {
+  return files.map((file) =>
+    file.id === ready.id
+      ? {
+          ...file,
+          thumbStatus: ready.thumbStatus,
+          thumbPath: ready.thumbPath ?? file.thumbPath,
+          plateCount: ready.plateCount || file.plateCount,
+        }
+      : file,
+  );
+}
+
 function App() {
   const [roots, setRoots] = useState<LibraryRoot[]>([]);
   const [files, setFiles] = useState<FileRow[]>([]);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [progress, setProgress] = useState<ScanProgress>(emptyProgress);
+  const [slicers, setSlicers] = useState<SlicerApp[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [thumbTick, setThumbTick] = useState(0);
+  const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
-    const [nextRoots, nextFiles, nextInfo, nextProgress] = await Promise.all([
+    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers] = await Promise.all([
       invoke<LibraryRoot[]>("list_roots"),
       invoke<FileRow[]>("list_files"),
       invoke<AppInfo>("get_app_info"),
       invoke<ScanProgress>("get_scan_status"),
+      invoke<SlicerApp[]>("list_slicers"),
     ]);
     setRoots(nextRoots);
     setFiles(nextFiles);
     setInfo(nextInfo);
     setProgress(nextProgress);
+    setSlicers(nextSlicers);
   }, []);
 
   useEffect(() => {
@@ -70,6 +98,11 @@ function App() {
           void refresh();
         }),
       );
+      add(
+        await listen<ThumbReady>("thumb-ready", (event) => {
+          setFiles((prev) => patchThumb(prev, event.payload));
+        }),
+      );
     }
 
     attach().catch((err: unknown) => {
@@ -92,20 +125,41 @@ function App() {
     return () => window.clearInterval(id);
   }, [progress.running]);
 
+  useEffect(() => {
+    if (progress.running || meshBusy.current) {
+      return;
+    }
+    const next = files.find(needsMeshThumb);
+    if (!next) {
+      return;
+    }
+    meshBusy.current = true;
+    renderOneMeshThumb(next)
+      .catch((err: unknown) => {
+        console.warn("mesh thumb failed", err);
+      })
+      .finally(() => {
+        meshBusy.current = false;
+        setThumbTick((n) => n + 1);
+      });
+  }, [files, progress.running, thumbTick]);
+
+  const selected = files.find((file) => file.id === selectedId) ?? null;
+
   async function addFolder() {
     setError(null);
-    const selected = await open({
+    const selectedFolder = await open({
       directory: true,
       multiple: false,
       title: "Add a library folder",
     });
-    if (!selected || Array.isArray(selected)) {
+    if (!selectedFolder || Array.isArray(selectedFolder)) {
       return;
     }
     setBusy(true);
     try {
       const next = await invoke<LibraryRoot[]>("add_library_folder", {
-        path: selected,
+        path: selectedFolder,
       });
       setRoots(next);
     } catch (err: unknown) {
@@ -212,7 +266,23 @@ function App() {
           </button>
         </section>
       ) : (
-        <Gallery files={files} />
+        <div className="flex min-h-0 flex-1">
+          <Gallery
+            files={files}
+            thumbsDir={info?.thumbsDir ?? null}
+            selectedId={selectedId}
+            onSelect={(file) => setSelectedId(file.id)}
+          />
+          {selected ? (
+            <DetailPane
+              file={selected}
+              thumbsDir={info?.thumbsDir ?? null}
+              slicers={slicers}
+              onClose={() => setSelectedId(null)}
+              onError={setError}
+            />
+          ) : null}
+        </div>
       )}
 
       {info ? (

@@ -38,7 +38,9 @@ pub struct FileRow {
     pub size: i64,
     pub mtime_ms: i64,
     pub thumb_status: String,
+    pub thumb_path: Option<String>,
     pub plate_count: i64,
+    pub triangle_count: Option<i64>,
     pub last_error: Option<String>,
 }
 
@@ -147,24 +149,11 @@ pub fn file_count(conn: &Connection) -> Result<i64> {
 
 pub fn list_files(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, plate_count, last_error
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
          FROM files
          ORDER BY rel_path COLLATE NOCASE ASC",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(FileRow {
-            id: row.get(0)?,
-            root_id: row.get(1)?,
-            rel_path: row.get(2)?,
-            abs_path: row.get(3)?,
-            ext: row.get(4)?,
-            size: row.get(5)?,
-            mtime_ms: row.get(6)?,
-            thumb_status: row.get(7)?,
-            plate_count: row.get(8)?,
-            last_error: row.get(9)?,
-        })
-    })?;
+    let rows = stmt.query_map([], file_from_row)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -184,7 +173,15 @@ pub fn upsert_file(conn: &Connection, rec: &FileRecord) -> Result<i64> {
             size = excluded.size,
             mtime_ms = excluded.mtime_ms,
             updated_at = excluded.updated_at,
-            last_error = NULL",
+            last_error = NULL,
+            thumb_status = CASE
+                WHEN files.size != excluded.size OR files.mtime_ms != excluded.mtime_ms THEN 'none'
+                ELSE files.thumb_status
+            END,
+            thumb_path = CASE
+                WHEN files.size != excluded.size OR files.mtime_ms != excluded.mtime_ms THEN NULL
+                ELSE files.thumb_path
+            END",
         params![
             rec.root_id,
             rec.rel_path,
@@ -263,6 +260,90 @@ pub fn root_id_for_path(conn: &Connection, abs_path: &Path) -> Result<Option<i64
         }
     }
     Ok(best.map(|(_, id)| id))
+}
+
+fn file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
+    Ok(FileRow {
+        id: row.get(0)?,
+        root_id: row.get(1)?,
+        rel_path: row.get(2)?,
+        abs_path: row.get(3)?,
+        ext: row.get(4)?,
+        size: row.get(5)?,
+        mtime_ms: row.get(6)?,
+        thumb_status: row.get(7)?,
+        thumb_path: row.get(8)?,
+        plate_count: row.get(9)?,
+        triangle_count: row.get(10)?,
+        last_error: row.get(11)?,
+    })
+}
+
+pub fn get_file(conn: &Connection, id: i64) -> Result<Option<FileRow>> {
+    conn.query_row(
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
+         FROM files WHERE id = ?1",
+        params![id],
+        file_from_row,
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+pub fn update_thumb(
+    conn: &Connection,
+    file_id: i64,
+    status: &str,
+    thumb_path: Option<&str>,
+    plate_count: Option<i64>,
+    triangle_count: Option<i64>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET
+            thumb_status = ?2,
+            thumb_path = COALESCE(?3, thumb_path),
+            plate_count = COALESCE(?4, plate_count),
+            triangle_count = COALESCE(?5, triangle_count),
+            updated_at = ?6
+         WHERE id = ?1",
+        params![
+            file_id,
+            status,
+            thumb_path,
+            plate_count,
+            triangle_count,
+            now_ms()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
+         FROM files
+         WHERE thumb_status = 'none'
+           AND (
+             ext = '3mf'
+             OR id IN (SELECT file_id FROM companions WHERE kind = 'image')
+           )",
+    )?;
+    let rows = stmt.query_map([], file_from_row)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn image_companion_path(conn: &Connection, file_id: i64) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT abs_path FROM companions WHERE file_id = ?1 AND kind = 'image' LIMIT 1",
+        params![file_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(AppError::from)
 }
 
 pub fn get_root(conn: &Connection, id: i64) -> Result<Option<LibraryRoot>> {

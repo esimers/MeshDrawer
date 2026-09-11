@@ -40,7 +40,6 @@ pub fn ensure_app_dirs() -> Result<(PathBuf, PathBuf, PathBuf)> {
 }
 
 /// Store paths with `/` separators in `rel_path`. Absolute paths stay OS-native.
-#[allow(dead_code)]
 pub fn to_rel_slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }

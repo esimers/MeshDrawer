@@ -19,8 +19,24 @@ export type FileRow = {
   size: number;
   mtimeMs: number;
   thumbStatus: string;
+  thumbPath: string | null;
   plateCount: number;
+  triangleCount: number | null;
   lastError: string | null;
+};
+
+export type SlicerApp = {
+  id: string;
+  name: string;
+  path: string | null;
+  available: boolean;
+};
+
+export type ThumbReady = {
+  id: number;
+  thumbPath: string | null;
+  thumbStatus: string;
+  plateCount: number;
 };
 
 export type ScanProgress = {
