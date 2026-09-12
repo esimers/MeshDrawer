@@ -207,10 +207,10 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
   }, [file.id, file.ext, plateIndex]);
 
   return (
-    <div className="relative h-64 w-full overflow-hidden rounded-md bg-zinc-950">
+    <div className="relative h-64 w-full overflow-hidden rounded-md bg-md-bg">
       <div ref={hostRef} className="h-full w-full" />
       {loading ? (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
+        <p className="absolute inset-0 flex items-center justify-center text-sm text-md-muted">
           Loading preview…
         </p>
       ) : null}
@@ -220,7 +220,7 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
         </p>
       ) : null}
       {tooBig ? (
-        <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-zinc-400">
+        <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-md-muted">
           Preview skipped ({tooBig.toLocaleString()} triangles; cap is 1,000,000). Open
           in a slicer to inspect.
         </p>

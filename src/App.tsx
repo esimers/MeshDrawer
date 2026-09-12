@@ -344,11 +344,11 @@ function App() {
   const emptyLibrary = roots.length === 0;
 
   return (
-    <main className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center justify-between gap-4 border-b border-zinc-800 px-4 py-3">
+    <main className="flex h-screen flex-col bg-md-bg text-md-text">
+      <header className="flex items-center justify-between gap-4 border-b border-md-border px-4 py-3">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">MeshDrawer</h1>
-          <p className="truncate text-sm text-zinc-400">
+          <p className="truncate text-sm text-md-muted">
             {files.length} model{files.length === 1 ? "" : "s"}
             {roots.length > 0 ? ` · ${roots.length} folder${roots.length === 1 ? "" : "s"}` : ""}
             {dupeGroups.length > 0
@@ -361,7 +361,7 @@ function App() {
             <button
               type="button"
               onClick={() => void togglePause()}
-              className="rounded-md border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800"
+              className="rounded-md border border-md-border px-3 py-2 text-sm hover:bg-md-border"
             >
               {progress.paused ? "Resume" : "Pause"}
             </button>
@@ -369,8 +369,8 @@ function App() {
           <button
             type="button"
             onClick={() => setView(view === "settings" ? "gallery" : "settings")}
-            className={`rounded-md border px-3 py-2 text-sm hover:bg-zinc-800 ${
-              view === "settings" ? "border-teal-500 text-teal-300" : "border-zinc-700"
+            className={`rounded-md border px-3 py-2 text-sm hover:bg-md-border ${
+              view === "settings" ? "border-md-cyan text-md-cyan" : "border-md-border"
             }`}
           >
             Settings
@@ -378,8 +378,8 @@ function App() {
           <button
             type="button"
             onClick={() => setView(view === "dupes" ? "gallery" : "dupes")}
-            className={`rounded-md border px-3 py-2 text-sm hover:bg-zinc-800 ${
-              view === "dupes" ? "border-teal-500 text-teal-300" : "border-zinc-700"
+            className={`rounded-md border px-3 py-2 text-sm hover:bg-md-border ${
+              view === "dupes" ? "border-md-cyan text-md-cyan" : "border-md-border"
             }`}
           >
             Duplicates{dupeGroups.length > 0 ? ` (${dupeGroups.length})` : ""}
@@ -388,7 +388,7 @@ function App() {
             type="button"
             onClick={() => void runRescan()}
             disabled={progress.running || roots.length === 0}
-            className="rounded-md border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-40"
+            className="rounded-md border border-md-border px-3 py-2 text-sm hover:bg-md-border disabled:opacity-40"
           >
             Rescan
           </button>
@@ -396,7 +396,7 @@ function App() {
             type="button"
             onClick={() => void addFolder()}
             disabled={busy}
-            className="rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"
+            className="rounded-md bg-md-cyan px-3 py-2 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text disabled:opacity-50"
           >
             Add a library folder
           </button>
@@ -404,27 +404,27 @@ function App() {
       </header>
 
       {progress.running ? (
-        <div className="border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs text-zinc-400">
+        <div className="border-b border-md-border bg-md-surface px-4 py-2 text-xs text-md-muted">
           <div className="flex items-center justify-between gap-4">
             <span>
               {progress.paused ? "Paused" : "Scanning"} · {progress.indexed} indexed · {progress.seen}{" "}
               files seen
               {progress.errors > 0 ? ` · ${progress.errors} errors` : ""}
             </span>
-            <span className="max-w-[50%] truncate font-mono text-[11px] text-zinc-500">
+            <span className="max-w-[50%] truncate font-mono text-[11px] text-md-muted">
               {progress.currentPath}
             </span>
           </div>
-          <div className="mt-2 h-1 overflow-hidden rounded bg-zinc-800">
-            <div className="h-full w-1/3 animate-pulse bg-teal-500" />
+          <div className="mt-2 h-1 overflow-hidden rounded bg-md-border">
+            <div className="h-full w-1/3 animate-pulse bg-md-cyan" />
           </div>
         </div>
       ) : null}
 
       {hashProgress.running ? (
-        <div className="border-b border-zinc-800 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-400">
+        <div className="border-b border-md-border bg-md-surface px-4 py-1.5 text-xs text-md-muted">
           Hashing exact copies · {hashProgress.hashed} done · {hashProgress.remaining} queued
-          <span className="ml-3 max-w-[40%] truncate font-mono text-[11px] text-zinc-600">
+          <span className="ml-3 max-w-[40%] truncate font-mono text-[11px] text-md-muted">
             {hashProgress.currentPath}
           </span>
         </div>
@@ -455,7 +455,7 @@ function App() {
       {emptyLibrary ? (
         <section className="flex flex-1 flex-col items-center justify-center px-6">
           <p className="text-xl font-medium">Add a library folder</p>
-          <p className="mt-3 max-w-md text-center text-sm leading-6 text-zinc-400">
+          <p className="mt-3 max-w-md text-center text-sm leading-6 text-md-muted">
             Point MeshDrawer at folders where your STL, 3MF, and OBJ files already live.
             Nothing is uploaded or moved.
           </p>
@@ -463,7 +463,7 @@ function App() {
             type="button"
             onClick={() => void addFolder()}
             disabled={busy}
-            className="mt-8 rounded-md bg-teal-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"
+            className="mt-8 rounded-md bg-md-cyan px-4 py-2.5 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text disabled:opacity-50"
           >
             {busy ? "Adding…" : "Add a library folder"}
           </button>
@@ -563,7 +563,7 @@ function App() {
                 onDrag={(widthFromRight) => resizeDetail(widthFromRight)}
               />
               <div
-                className="flex h-full shrink-0 flex-col border-l border-zinc-800"
+                className="flex h-full shrink-0 flex-col border-l border-md-border"
                 style={{ width: clamp(detailWidth, 240, 900) }}
               >
                 <DetailPane
@@ -651,7 +651,7 @@ function App() {
       ) : null}
 
       {info ? (
-        <footer className="border-t border-zinc-800 px-4 py-2 text-xs text-zinc-500">
+        <footer className="border-t border-md-border px-4 py-2 text-xs text-md-muted">
           {info.dataDir}
         </footer>
       ) : null}

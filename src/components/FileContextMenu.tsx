@@ -61,10 +61,10 @@ export function FileContextMenu({ file, x, y, slicers, onAction, onClose }: Prop
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 min-w-52 rounded-md border border-zinc-700 bg-zinc-900 py-1 text-sm shadow-xl"
+      className="fixed z-50 min-w-52 rounded-md border border-md-border bg-md-surface py-1 text-sm shadow-xl"
       style={{ left: pos.left, top: pos.top }}
     >
-      <p className="truncate px-3 py-1.5 text-[11px] text-zinc-500">
+      <p className="truncate px-3 py-1.5 text-[11px] text-md-muted">
         {fileNameFromRel(file.relPath)}
       </p>
       <MenuItem
@@ -79,11 +79,11 @@ export function FileContextMenu({ file, x, y, slicers, onAction, onClose }: Prop
           onClick={() => onAction({ type: "open", slicerId: slicer.id })}
         />
       ))}
-      <div className="my-1 h-px bg-zinc-800" />
+      <div className="my-1 h-px bg-md-border" />
       <MenuItem label="Show in Explorer" onClick={() => onAction({ type: "reveal" })} />
       <MenuItem label="Copy path" onClick={() => onAction({ type: "copy-path" })} />
       <MenuItem label="Copy name" onClick={() => onAction({ type: "copy-name" })} />
-      <div className="my-1 h-px bg-zinc-800" />
+      <div className="my-1 h-px bg-md-border" />
       <MenuItem label="Rename" hint="F2" onClick={() => onAction({ type: "rename" })} />
       <MenuItem label="Delete" hint="Del" onClick={() => onAction({ type: "delete" })} />
       <MenuItem label="Properties" onClick={() => onAction({ type: "properties" })} />
@@ -105,10 +105,10 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-zinc-100 hover:bg-teal-700"
+      className="flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-md-text hover:bg-md-magenta"
     >
       <span>{label}</span>
-      {hint ? <span className="text-[11px] text-zinc-400">{hint}</span> : null}
+      {hint ? <span className="text-[11px] text-md-muted">{hint}</span> : null}
     </button>
   );
 }

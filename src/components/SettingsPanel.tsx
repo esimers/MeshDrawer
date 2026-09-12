@@ -51,7 +51,7 @@ export function SettingsPanel({
       <div className="mx-auto max-w-2xl space-y-8">
         <section>
           <h2 className="text-sm font-semibold">Library folders</h2>
-          <ul className="mt-2 divide-y divide-zinc-800 overflow-hidden rounded-lg border border-zinc-800">
+          <ul className="mt-2 divide-y divide-md-border overflow-hidden rounded-lg border border-md-border">
             {roots.map((root) => (
               <li key={root.id} className="flex items-center justify-between gap-3 px-3 py-2">
                 <span className="truncate font-mono text-xs">{root.path}</span>
@@ -68,7 +68,7 @@ export function SettingsPanel({
           <button
             type="button"
             onClick={onAddRoot}
-            className="mt-2 rounded-md border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
+            className="mt-2 rounded-md border border-md-border px-3 py-1.5 text-sm hover:bg-md-border"
           >
             Add folder
           </button>
@@ -76,31 +76,31 @@ export function SettingsPanel({
 
         <section>
           <h2 className="text-sm font-semibold">Slicers</h2>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-md-muted">
             Leave blank to auto-detect Bambu Studio and Orca Slicer.
           </p>
-          <label className="mt-3 block text-xs text-zinc-400">
+          <label className="mt-3 block text-xs text-md-muted">
             Bambu Studio
             <span className="mt-1 flex gap-2">
               <input
                 value={settings.bambuPath}
                 onChange={(event) => onChange({ ...settings, bambuPath: event.target.value })}
-                className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-xs"
+                className="min-w-0 flex-1 rounded-md border border-md-border bg-md-bg px-2 py-1.5 font-mono text-xs"
               />
-              <button type="button" onClick={() => void pick("bambu")} className="rounded-md border border-zinc-700 px-2 text-xs">
+              <button type="button" onClick={() => void pick("bambu")} className="rounded-md border border-md-border px-2 text-xs">
                 Browse
               </button>
             </span>
           </label>
-          <label className="mt-3 block text-xs text-zinc-400">
+          <label className="mt-3 block text-xs text-md-muted">
             Orca Slicer
             <span className="mt-1 flex gap-2">
               <input
                 value={settings.orcaPath}
                 onChange={(event) => onChange({ ...settings, orcaPath: event.target.value })}
-                className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-xs"
+                className="min-w-0 flex-1 rounded-md border border-md-border bg-md-bg px-2 py-1.5 font-mono text-xs"
               />
-              <button type="button" onClick={() => void pick("orca")} className="rounded-md border border-zinc-700 px-2 text-xs">
+              <button type="button" onClick={() => void pick("orca")} className="rounded-md border border-md-border px-2 text-xs">
                 Browse
               </button>
             </span>
@@ -113,9 +113,9 @@ export function SettingsPanel({
             <input
               value={settings.quarantineDir}
               onChange={(event) => onChange({ ...settings, quarantineDir: event.target.value })}
-              className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-xs"
+              className="min-w-0 flex-1 rounded-md border border-md-border bg-md-bg px-2 py-1.5 font-mono text-xs"
             />
-            <button type="button" onClick={() => void pick("quarantine")} className="rounded-md border border-zinc-700 px-2 text-xs">
+            <button type="button" onClick={() => void pick("quarantine")} className="rounded-md border border-md-border px-2 text-xs">
               Browse
             </button>
           </span>
@@ -123,12 +123,12 @@ export function SettingsPanel({
 
         <section>
           <h2 className="text-sm font-semibold">Exclude patterns</h2>
-          <p className="mt-1 text-xs text-zinc-500">One per line. `*` wildcards and path fragments are OK.</p>
+          <p className="mt-1 text-xs text-md-muted">One per line. `*` wildcards and path fragments are OK.</p>
           <textarea
             value={settings.excludePatterns}
             onChange={(event) => onChange({ ...settings, excludePatterns: event.target.value })}
             rows={5}
-            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-xs"
+            className="mt-2 w-full rounded-md border border-md-border bg-md-bg px-2 py-1.5 font-mono text-xs"
             placeholder={"old\n*backup*\nDownloads"}
           />
         </section>
@@ -136,7 +136,7 @@ export function SettingsPanel({
         <button
           type="button"
           onClick={onSave}
-          className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500"
+          className="rounded-md bg-md-cyan px-4 py-2 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text"
         >
           Save settings
         </button>

@@ -26,16 +26,16 @@ export function RenameDialog({
           onSubmit(value);
         }}
       >
-        <label className="block text-sm text-zinc-300">
+        <label className="block text-sm text-md-text">
           New name
-          <span className="mt-2 flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-950">
+          <span className="mt-2 flex overflow-hidden rounded-md border border-md-border bg-md-bg">
             <input
               ref={inputRef}
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-zinc-100 outline-none"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-md-text outline-none"
             />
-            <span className="border-l border-zinc-800 px-3 py-2 text-zinc-500">
+            <span className="border-l border-md-border px-3 py-2 text-md-muted">
               .{file.ext}
             </span>
           </span>
@@ -44,13 +44,13 @@ export function RenameDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
+            className="rounded-md border border-md-border px-3 py-1.5 text-sm hover:bg-md-border"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-500"
+            className="rounded-md bg-md-cyan px-3 py-1.5 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text"
           >
             Rename
           </button>
@@ -71,18 +71,18 @@ export function DeleteDialog({
 }) {
   return (
     <Modal title="Delete" onClose={onCancel}>
-      <p className="text-sm text-zinc-300">
-        Move <span className="font-medium text-zinc-100">{fileNameFromRel(file.relPath)}</span> to
+      <p className="text-sm text-md-text">
+        Move <span className="font-medium text-md-text">{fileNameFromRel(file.relPath)}</span> to
         the Recycle Bin?
       </p>
-      <p className="mt-2 text-xs text-zinc-500">
+      <p className="mt-2 text-xs text-md-muted">
         MeshDrawer will drop it from the library. You can restore the file from the Recycle Bin.
       </p>
       <div className="mt-5 flex justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
+          className="rounded-md border border-md-border px-3 py-1.5 text-sm hover:bg-md-border"
         >
           Cancel
         </button>
@@ -121,26 +121,26 @@ export function PropertiesDialog({
         {file.plateCount > 0 ? <Prop label="Plates" value={String(file.plateCount)} /> : null}
         <Prop label="Thumbnail" value={file.thumbStatus} />
       </dl>
-      <p className="mt-3 break-all font-mono text-[11px] text-zinc-500">{file.absPath}</p>
+      <p className="mt-3 break-all font-mono text-[11px] text-md-muted">{file.absPath}</p>
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         <button
           type="button"
           onClick={onExplorer}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
+          className="rounded-md border border-md-border px-3 py-1.5 text-sm hover:bg-md-border"
         >
           Show in Explorer
         </button>
         <button
           type="button"
           onClick={onWindowsProps}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
+          className="rounded-md border border-md-border px-3 py-1.5 text-sm hover:bg-md-border"
         >
           Windows properties
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-500"
+          className="rounded-md bg-md-cyan px-3 py-1.5 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text"
         >
           Close
         </button>
@@ -152,8 +152,8 @@ export function PropertiesDialog({
 function Prop({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[88px_1fr] gap-2">
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="break-all text-zinc-100">{value}</dd>
+      <dt className="text-md-muted">{label}</dt>
+      <dd className="break-all text-md-text">{value}</dd>
     </div>
   );
 }
@@ -182,11 +182,11 @@ function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl"
+        className="w-full max-w-md rounded-lg border border-md-border bg-md-surface p-4 shadow-2xl"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-xs text-zinc-400 hover:text-white">
+          <button type="button" onClick={onClose} className="text-xs text-md-muted hover:text-md-text">
             Close
           </button>
         </div>

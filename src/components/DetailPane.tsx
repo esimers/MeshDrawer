@@ -79,13 +79,13 @@ export function DetailPane({
   }
 
   return (
-    <aside className="flex h-full min-w-0 flex-1 flex-col bg-zinc-900/40">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+    <aside className="flex h-full min-w-0 flex-1 flex-col bg-md-surface/40">
+      <div className="flex items-center justify-between border-b border-md-border px-4 py-3">
         <h2 className="truncate text-sm font-medium">{fileNameFromRel(file.relPath)}</h2>
         <button
           type="button"
           onClick={onClose}
-          className="text-xs text-zinc-400 hover:text-zinc-100"
+          className="text-xs text-md-muted hover:text-md-text"
         >
           Close
         </button>
@@ -96,7 +96,7 @@ export function DetailPane({
           <img
             src={thumb}
             alt=""
-            className="mb-3 h-40 w-full rounded-md bg-zinc-950 object-contain"
+            className="mb-3 h-40 w-full rounded-md bg-md-bg object-contain"
           />
         ) : null}
 
@@ -111,14 +111,14 @@ export function DetailPane({
           </div>
         ) : null}
         {!showStlViewer && !is3mf && !thumb ? (
-          <div className="flex h-64 items-center justify-center rounded-md bg-zinc-950 text-sm text-zinc-500">
+          <div className="flex h-64 items-center justify-center rounded-md bg-md-bg text-sm text-md-muted">
             No preview yet
           </div>
         ) : null}
 
         {plates.length > 1 ? (
           <div className="mt-3">
-            <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Plates</p>
+            <p className="mb-2 text-xs uppercase tracking-wide text-md-muted">Plates</p>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {plates.map((plate) => {
                 const src =
@@ -132,18 +132,18 @@ export function DetailPane({
                     type="button"
                     onClick={() => selectPlate(plate)}
                     className={`w-20 shrink-0 overflow-hidden rounded border ${
-                      active ? "border-teal-400" : "border-zinc-700"
+                      active ? "border-md-magenta shadow-[0_0_12px_rgba(255,43,214,0.35)]" : "border-md-border"
                     }`}
                     title={plate.name || `Plate ${plate.plateIndex}`}
                   >
                     {src ? (
                       <img src={src} alt="" className="h-14 w-full object-cover" />
                     ) : (
-                      <div className="flex h-14 items-center justify-center bg-zinc-950 text-[10px] text-zinc-400">
+                      <div className="flex h-14 items-center justify-center bg-md-bg text-[10px] text-md-muted">
                         {plate.plateIndex}
                       </div>
                     )}
-                    <span className="block truncate px-1 py-0.5 text-[10px] text-zinc-300">
+                    <span className="block truncate px-1 py-0.5 text-[10px] text-md-text">
                       {plate.name || `Plate ${plate.plateIndex}`}
                     </span>
                   </button>
@@ -153,25 +153,25 @@ export function DetailPane({
           </div>
         ) : null}
 
-        <dl className="mt-4 space-y-1 text-xs text-zinc-400">
+        <dl className="mt-4 space-y-1 text-xs text-md-muted">
           <div className="flex justify-between gap-3">
             <dt>Format</dt>
-            <dd className="text-zinc-200">{extLabel(file.ext)}</dd>
+            <dd className="text-md-text">{extLabel(file.ext)}</dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt>Size</dt>
-            <dd className="text-zinc-200">{formatBytes(file.size)}</dd>
+            <dd className="text-md-text">{formatBytes(file.size)}</dd>
           </div>
           {file.plateCount > 0 ? (
             <div className="flex justify-between gap-3">
               <dt>Plates</dt>
-              <dd className="text-zinc-200">{file.plateCount}</dd>
+              <dd className="text-md-text">{file.plateCount}</dd>
             </div>
           ) : null}
         </dl>
-        <p className="mt-3 break-all font-mono text-[11px] text-zinc-500">{file.absPath}</p>
+        <p className="mt-3 break-all font-mono text-[11px] text-md-muted">{file.absPath}</p>
 
-        <label className="mt-4 block text-xs uppercase tracking-wide text-zinc-500">
+        <label className="mt-4 block text-xs uppercase tracking-wide text-md-muted">
           Status
           <select
             value={file.status}
@@ -185,7 +185,7 @@ export function DetailPane({
                   onError(err instanceof Error ? err.message : String(err));
                 });
             }}
-            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            className="mt-1 w-full rounded-md border border-md-border bg-md-bg px-2 py-1.5 text-sm text-md-text"
           >
             <option value="unset">Unset</option>
             <option value="unprinted">Unprinted</option>
@@ -195,7 +195,7 @@ export function DetailPane({
         </label>
 
         <div className="mt-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-500">Tags</p>
+          <p className="text-xs uppercase tracking-wide text-md-muted">Tags</p>
           <div className="mt-1 flex flex-wrap gap-1">
             {file.tags.map((tag) => (
               <button
@@ -208,7 +208,7 @@ export function DetailPane({
                       onError(err instanceof Error ? err.message : String(err));
                     });
                 }}
-                className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-teal-200 hover:bg-zinc-700"
+                className="rounded-full bg-md-violet/40 px-2 py-0.5 text-xs text-md-cyan hover:bg-md-magenta/40"
                 title="Remove tag"
               >
                 {tag} ×
@@ -237,15 +237,15 @@ export function DetailPane({
               value={tagDraft}
               onChange={(event) => setTagDraft(event.target.value)}
               placeholder="Add tag"
-              className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-md-border bg-md-bg px-2 py-1 text-sm"
             />
-            <button type="submit" className="rounded-md border border-zinc-700 px-2 text-xs">
+            <button type="submit" className="rounded-md border border-md-border px-2 text-xs">
               Add
             </button>
           </form>
         </div>
 
-        <label className="mt-4 block text-xs uppercase tracking-wide text-zinc-500">
+        <label className="mt-4 block text-xs uppercase tracking-wide text-md-muted">
           Notes
           <textarea
             value={notes}
@@ -261,12 +261,12 @@ export function DetailPane({
                 });
             }}
             rows={4}
-            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            className="mt-1 w-full rounded-md border border-md-border bg-md-bg px-2 py-1.5 text-sm text-md-text"
           />
         </label>
       </div>
 
-      <div className="space-y-2 border-t border-zinc-800 p-4">
+      <div className="space-y-2 border-t border-md-border p-4">
         {slicers
           .filter((s) => s.available)
           .map((slicer) => (
@@ -274,7 +274,7 @@ export function DetailPane({
               key={slicer.id}
               type="button"
               onClick={() => void openSlicer(slicer.id)}
-              className="w-full rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500"
+              className="w-full rounded-md bg-md-cyan px-3 py-2 text-sm font-medium text-md-bg hover:bg-md-magenta hover:text-md-text"
             >
               Open with {slicer.name}
             </button>
@@ -282,7 +282,7 @@ export function DetailPane({
         <button
           type="button"
           onClick={() => void reveal()}
-          className="w-full rounded-md border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800"
+          className="w-full rounded-md border border-md-border px-3 py-2 text-sm hover:bg-md-border"
         >
           Reveal in Explorer
         </button>

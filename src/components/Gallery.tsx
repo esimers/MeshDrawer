@@ -54,7 +54,7 @@ export function Gallery({
 
   if (files.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400">
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-md-muted">
         No STL, 3MF, or OBJ files found in the library folders.
       </div>
     );
@@ -98,11 +98,11 @@ export function Gallery({
                     title={`${file.absPath}\nRight-click for options`}
                     className={`flex h-[184px] flex-col overflow-hidden rounded-lg border text-left [content-visibility:auto] ${
                       selected
-                        ? "border-teal-400 bg-zinc-900"
-                        : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-600"
+                        ? "border-md-magenta bg-md-surface shadow-[0_0_12px_rgba(255,43,214,0.35)]"
+                        : "border-md-border bg-md-surface/80 hover:border-md-cyan"
                     }`}
                   >
-                    <div className="relative flex h-28 items-center justify-center bg-zinc-950">
+                    <div className="relative flex h-28 items-center justify-center bg-md-bg">
                       {file.lastError ? (
                         <span
                           className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500"
@@ -118,16 +118,16 @@ export function Gallery({
                           className="h-full w-full object-contain"
                         />
                       ) : (
-                        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-teal-300">
+                        <span className="rounded bg-md-border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-md-cyan">
                           {extLabel(file.ext)}
                         </span>
                       )}
                     </div>
                     <div className="min-w-0 px-3 py-2">
-                      <p className="truncate text-sm font-medium text-zinc-100">
+                      <p className="truncate text-sm font-medium text-md-text">
                         {fileNameFromRel(file.relPath)}
                       </p>
-                      <p className="mt-0.5 text-xs text-zinc-500">
+                      <p className="mt-0.5 text-xs text-md-muted">
                         {extLabel(file.ext)} · {formatBytes(file.size)}
                         {file.plateCount > 1 ? ` · ${file.plateCount} plates` : ""}
                         {file.status && file.status !== "unset" ? ` · ${file.status}` : ""}

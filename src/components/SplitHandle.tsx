@@ -34,7 +34,7 @@ export function SplitHandle({ onDrag }: Props) {
       aria-orientation="vertical"
       title="Drag to resize"
       onMouseDown={startDrag}
-      className="group relative z-10 w-2 shrink-0 cursor-col-resize bg-zinc-900 hover:bg-teal-700"
+      className="group relative z-10 w-2 shrink-0 cursor-col-resize bg-md-surface hover:bg-md-magenta"
     >
       <div className="absolute inset-y-0 -left-1 -right-1" />
     </div>
