@@ -73,7 +73,7 @@ export function DetailPane({
   }
 
   return (
-    <aside className="flex w-[400px] shrink-0 flex-col border-l border-zinc-800 bg-zinc-900/40">
+    <aside className="flex h-full min-w-0 flex-1 flex-col bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <h2 className="truncate text-sm font-medium">{fileNameFromRel(file.relPath)}</h2>
         <button
@@ -94,8 +94,16 @@ export function DetailPane({
           />
         ) : null}
 
-        {showStlViewer ? <ModelViewer file={file} /> : null}
-        {is3mf ? <ModelViewer file={file} plateIndex={plateIndex} /> : null}
+        {showStlViewer ? (
+          <div className="min-h-64">
+            <ModelViewer file={file} />
+          </div>
+        ) : null}
+        {is3mf ? (
+          <div className="min-h-64">
+            <ModelViewer file={file} plateIndex={plateIndex} />
+          </div>
+        ) : null}
         {!showStlViewer && !is3mf && !thumb ? (
           <div className="flex h-64 items-center justify-center rounded-md bg-zinc-950 text-sm text-zinc-500">
             No preview yet

@@ -3,7 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DetailPane } from "./components/DetailPane";
+import { FileContextMenu, type FileMenuAction } from "./components/FileContextMenu";
 import { Gallery } from "./components/Gallery";
+import { SplitHandle } from "./components/SplitHandle";
+import { fileNameFromRel } from "./lib/files";
+import { clamp } from "./lib/clamp";
 import { needsMeshThumb, renderOneMeshThumb } from "./lib/meshThumbs";
 import type {
   AppInfo,
@@ -14,6 +18,9 @@ import type {
   ThumbReady,
 } from "./types";
 import "./App.css";
+
+const DETAIL_WIDTH_KEY = "meshdrewer.detailWidth";
+const DETAIL_WIDTH_DEFAULT = 420;
 
 const emptyProgress: ScanProgress = {
   running: false,
@@ -49,6 +56,11 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [thumbTick, setThumbTick] = useState(0);
+  const [detailWidth, setDetailWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(DETAIL_WIDTH_KEY));
+    return Number.isFinite(stored) && stored >= 240 ? stored : DETAIL_WIDTH_DEFAULT;
+  });
+  const [menu, setMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null);
   const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -144,6 +156,43 @@ function App() {
         setThumbTick((n) => n + 1);
       });
   }, [files, progress.running, thumbTick]);
+
+  const resizeDetail = useCallback((widthFromRight: number) => {
+    setDetailWidth(widthFromRight);
+    localStorage.setItem(DETAIL_WIDTH_KEY, String(Math.round(widthFromRight)));
+  }, []);
+
+  const preferredSlicer = slicers.find((s) => s.available)?.id ?? "system";
+
+  const runFileAction = useCallback(
+    async (file: FileRow, action: FileMenuAction) => {
+      setError(null);
+      try {
+        if (action.type === "preview") {
+          setSelectedId(file.id);
+          return;
+        }
+        if (action.type === "open") {
+          await invoke("open_in_slicer", { id: file.id, slicerId: action.slicerId });
+          return;
+        }
+        if (action.type === "reveal") {
+          await invoke("reveal_in_explorer", { id: file.id });
+          return;
+        }
+        if (action.type === "copy-path") {
+          await navigator.clipboard.writeText(file.absPath);
+          return;
+        }
+        if (action.type === "copy-name") {
+          await navigator.clipboard.writeText(fileNameFromRel(file.relPath));
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
 
   const handlePlateThumb = useCallback((fileId: number, thumbPath: string | null) => {
     setThumbOverrides((prev) => {
@@ -278,26 +327,56 @@ function App() {
           </button>
         </section>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1">
           <Gallery
             files={files}
             thumbsDir={info?.thumbsDir ?? null}
             selectedId={selectedId}
             thumbOverrides={thumbOverrides}
             onSelect={(file) => setSelectedId(file.id)}
+            onOpen={(file) => {
+              setSelectedId(file.id);
+              void runFileAction(file, { type: "open", slicerId: preferredSlicer });
+            }}
+            onContextMenu={(file, x, y) => setMenu({ file, x, y })}
           />
           {selected ? (
-            <DetailPane
-              file={selected}
-              thumbsDir={info?.thumbsDir ?? null}
-              slicers={slicers}
-              onClose={() => setSelectedId(null)}
-              onError={setError}
-              onPlateThumb={handlePlateThumb}
-            />
+            <>
+              <SplitHandle
+                onDrag={(widthFromRight) => resizeDetail(widthFromRight)}
+              />
+              <div
+                className="flex h-full shrink-0 flex-col border-l border-zinc-800"
+                style={{ width: clamp(detailWidth, 240, 900) }}
+              >
+                <DetailPane
+                  file={selected}
+                  thumbsDir={info?.thumbsDir ?? null}
+                  slicers={slicers}
+                  onClose={() => setSelectedId(null)}
+                  onError={setError}
+                  onPlateThumb={handlePlateThumb}
+                />
+              </div>
+            </>
           ) : null}
         </div>
       )}
+
+      {menu ? (
+        <FileContextMenu
+          file={menu.file}
+          x={menu.x}
+          y={menu.y}
+          slicers={slicers}
+          onClose={() => setMenu(null)}
+          onAction={(action) => {
+            const file = menu.file;
+            setMenu(null);
+            void runFileAction(file, action);
+          }}
+        />
+      ) : null}
 
       {info ? (
         <footer className="border-t border-zinc-800 px-4 py-2 text-xs text-zinc-500">

@@ -14,9 +14,19 @@ type Props = {
   selectedId: number | null;
   thumbOverrides?: Record<number, string>;
   onSelect: (file: FileRow) => void;
+  onOpen: (file: FileRow) => void;
+  onContextMenu: (file: FileRow, x: number, y: number) => void;
 };
 
-export function Gallery({ files, thumbsDir, selectedId, thumbOverrides, onSelect }: Props) {
+export function Gallery({
+  files,
+  thumbsDir,
+  selectedId,
+  thumbOverrides,
+  onSelect,
+  onOpen,
+  onContextMenu,
+}: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -79,7 +89,13 @@ export function Gallery({ files, thumbsDir, selectedId, thumbOverrides, onSelect
                     key={file.id}
                     type="button"
                     onClick={() => onSelect(file)}
-                    title={file.absPath}
+                    onDoubleClick={() => onOpen(file)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      onSelect(file);
+                      onContextMenu(file, event.clientX, event.clientY);
+                    }}
+                    title={`${file.absPath}\nRight-click for options`}
                     className={`flex h-[184px] flex-col overflow-hidden rounded-lg border text-left ${
                       selected
                         ? "border-teal-400 bg-zinc-900"
