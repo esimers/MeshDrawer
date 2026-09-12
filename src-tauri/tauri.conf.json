@@ -43,7 +43,10 @@
       "nsis": {
         "installMode": "currentUser",
         "installerIcon": "icons/icon.ico",
-        "uninstallerIcon": "icons/icon.ico"
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/nsis-header.bmp",
+        "sidebarImage": "windows/nsis-sidebar.bmp",
+        "uninstallerHeaderImage": "windows/nsis-header.bmp"
       }
     }
   }
