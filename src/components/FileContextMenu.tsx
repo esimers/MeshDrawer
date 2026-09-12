@@ -8,7 +8,10 @@ export type FileMenuAction =
   | { type: "open"; slicerId: string }
   | { type: "reveal" }
   | { type: "copy-path" }
-  | { type: "copy-name" };
+  | { type: "copy-name" }
+  | { type: "rename" }
+  | { type: "delete" }
+  | { type: "properties" };
 
 type Props = {
   file: FileRow;
@@ -80,6 +83,10 @@ export function FileContextMenu({ file, x, y, slicers, onAction, onClose }: Prop
       <MenuItem label="Show in Explorer" onClick={() => onAction({ type: "reveal" })} />
       <MenuItem label="Copy path" onClick={() => onAction({ type: "copy-path" })} />
       <MenuItem label="Copy name" onClick={() => onAction({ type: "copy-name" })} />
+      <div className="my-1 h-px bg-zinc-800" />
+      <MenuItem label="Rename" hint="F2" onClick={() => onAction({ type: "rename" })} />
+      <MenuItem label="Delete" hint="Del" onClick={() => onAction({ type: "delete" })} />
+      <MenuItem label="Properties" onClick={() => onAction({ type: "properties" })} />
     </div>
   );
 }

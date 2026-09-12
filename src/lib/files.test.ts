@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extLabel, fileNameFromRel } from "./files";
+import { extLabel, fileNameFromRel, fileStem } from "./files";
 
 describe("fileNameFromRel", () => {
   it("takes the last path segment", () => {
@@ -11,5 +11,12 @@ describe("fileNameFromRel", () => {
 describe("extLabel", () => {
   it("uppercases the extension", () => {
     expect(extLabel("stl")).toBe("STL");
+  });
+});
+
+describe("fileStem", () => {
+  it("strips the last extension", () => {
+    expect(fileStem("models/dragon.stl")).toBe("dragon");
+    expect(fileStem("wing.3mf")).toBe("wing");
   });
 });

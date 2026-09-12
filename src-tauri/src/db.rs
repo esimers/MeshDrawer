@@ -288,6 +288,24 @@ fn file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
     })
 }
 
+pub fn update_file_location(
+    conn: &Connection,
+    id: i64,
+    abs_path: &str,
+    rel_path: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET abs_path = ?2, rel_path = ?3, updated_at = ?4 WHERE id = ?1",
+        params![id, abs_path, rel_path, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_file_row(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM files WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 pub fn get_file(conn: &Connection, id: i64) -> Result<Option<FileRow>> {
     conn.query_row(
         "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error

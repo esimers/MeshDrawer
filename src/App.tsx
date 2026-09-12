@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { DeleteDialog, PropertiesDialog, RenameDialog } from "./components/Dialogs";
 import { DetailPane } from "./components/DetailPane";
 import { FileContextMenu, type FileMenuAction } from "./components/FileContextMenu";
 import { Gallery } from "./components/Gallery";
@@ -61,6 +62,9 @@ function App() {
     return Number.isFinite(stored) && stored >= 240 ? stored : DETAIL_WIDTH_DEFAULT;
   });
   const [menu, setMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null);
+  const [renameFile, setRenameFile] = useState<FileRow | null>(null);
+  const [deleteFile, setDeleteFile] = useState<FileRow | null>(null);
+  const [propsFile, setPropsFile] = useState<FileRow | null>(null);
   const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -186,6 +190,18 @@ function App() {
         }
         if (action.type === "copy-name") {
           await navigator.clipboard.writeText(fileNameFromRel(file.relPath));
+          return;
+        }
+        if (action.type === "rename") {
+          setRenameFile(file);
+          return;
+        }
+        if (action.type === "delete") {
+          setDeleteFile(file);
+          return;
+        }
+        if (action.type === "properties") {
+          setPropsFile(file);
         }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
@@ -193,6 +209,32 @@ function App() {
     },
     [],
   );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (renameFile || deleteFile || propsFile || menu) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        return;
+      }
+      const file = files.find((row) => row.id === selectedId);
+      if (!file) {
+        return;
+      }
+      if (event.key === "F2") {
+        event.preventDefault();
+        setRenameFile(file);
+      }
+      if (event.key === "Delete") {
+        event.preventDefault();
+        setDeleteFile(file);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, files, renameFile, deleteFile, propsFile, menu]);
 
   const handlePlateThumb = useCallback((fileId: number, thumbPath: string | null) => {
     setThumbOverrides((prev) => {
@@ -374,6 +416,59 @@ function App() {
             const file = menu.file;
             setMenu(null);
             void runFileAction(file, action);
+          }}
+        />
+      ) : null}
+
+      {renameFile ? (
+        <RenameDialog
+          file={renameFile}
+          onCancel={() => setRenameFile(null)}
+          onSubmit={(name) => {
+            const id = renameFile.id;
+            setRenameFile(null);
+            void invoke<FileRow>("rename_library_file", { id, newName: name })
+              .then((row) => {
+                setFiles((prev) => prev.map((f) => (f.id === row.id ? row : f)));
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+        />
+      ) : null}
+
+      {deleteFile ? (
+        <DeleteDialog
+          file={deleteFile}
+          onCancel={() => setDeleteFile(null)}
+          onConfirm={() => {
+            const id = deleteFile.id;
+            setDeleteFile(null);
+            void invoke("delete_library_file", { id })
+              .then(() => {
+                setFiles((prev) => prev.filter((f) => f.id !== id));
+                setSelectedId((current) => (current === id ? null : current));
+                setPropsFile((current) => (current?.id === id ? null : current));
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+        />
+      ) : null}
+
+      {propsFile ? (
+        <PropertiesDialog
+          file={files.find((f) => f.id === propsFile.id) ?? propsFile}
+          onClose={() => setPropsFile(null)}
+          onExplorer={() => {
+            void runFileAction(propsFile, { type: "reveal" });
+          }}
+          onWindowsProps={() => {
+            void invoke("windows_properties", { id: propsFile.id }).catch((err: unknown) => {
+              setError(err instanceof Error ? err.message : String(err));
+            });
           }}
         />
       ) : null}

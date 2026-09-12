@@ -1,5 +1,6 @@
 mod db;
 mod error;
+mod files;
 mod ignore;
 mod open;
 mod paths;
@@ -10,7 +11,7 @@ mod thumbs;
 mod watch;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::thread;
 
@@ -116,6 +117,70 @@ fn open_in_slicer(db: State<Db>, id: i64, slicer_id: String) -> Result<(), Strin
 fn reveal_in_explorer(db: State<Db>, id: i64) -> Result<(), String> {
     let path = file_abs(&db, id)?;
     open::reveal(Path::new(&path)).map_err(String::from)
+}
+
+#[tauri::command]
+fn windows_properties(db: State<Db>, id: i64) -> Result<(), String> {
+    let path = file_abs(&db, id)?;
+    open::windows_properties(Path::new(&path)).map_err(String::from)
+}
+
+#[tauri::command]
+fn rename_library_file(
+    app: AppHandle,
+    db: State<Db>,
+    watchers: State<WatchHub>,
+    id: i64,
+    new_name: String,
+) -> Result<FileRow, String> {
+    let file = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        db::get_file(&conn, id)
+            .map_err(String::from)?
+            .ok_or_else(|| "file not found".to_string())?
+    };
+    let old = PathBuf::from(&file.abs_path);
+    let dest = files::next_path(&old, &new_name).map_err(String::from)?;
+    watchers.mute(&old);
+    watchers.mute(&dest);
+    let new_abs = files::rename_on_disk(&old, &new_name).map_err(String::from)?;
+    let rel = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        let root = db::get_root(&conn, file.root_id)
+            .map_err(String::from)?
+            .ok_or_else(|| "library folder missing".to_string())?;
+        let rel = files::rel_path_for(Path::new(&root.path), &new_abs);
+        if let Err(err) = db::update_file_location(&conn, id, &new_abs.to_string_lossy(), &rel) {
+            let _ = fs::rename(&new_abs, &old);
+            return Err(err.to_string());
+        }
+        rel
+    };
+    let _ = rel;
+    let _ = app.emit("library-changed", ());
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .ok_or_else(|| "file not found after rename".to_string())
+}
+
+#[tauri::command]
+fn delete_library_file(
+    app: AppHandle,
+    db: State<Db>,
+    watchers: State<WatchHub>,
+    id: i64,
+) -> Result<(), String> {
+    let path = file_abs(&db, id)?;
+    let path_buf = PathBuf::from(&path);
+    watchers.mute(&path_buf);
+    trash::delete(&path_buf).map_err(|e| e.to_string())?;
+    {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        db::delete_file_row(&conn, id).map_err(String::from)?;
+    }
+    let _ = app.emit("library-changed", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -303,7 +368,10 @@ pub fn run() {
             save_thumb_png,
             set_thumb_status,
             list_plates,
-            load_plate_mesh
+            load_plate_mesh,
+            windows_properties,
+            rename_library_file,
+            delete_library_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

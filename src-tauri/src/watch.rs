@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
@@ -13,13 +14,31 @@ use crate::scan::{discover_file, upsert_discovered};
 
 pub struct WatchHub {
     inner: Mutex<Option<Debouncer<RecommendedWatcher, RecommendedCache>>>,
+    skip: Mutex<HashMap<String, Instant>>,
 }
 
 impl WatchHub {
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(None),
+            skip: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn mute(&self, path: &Path) {
+        let key = mute_key(path);
+        if let Ok(mut map) = self.skip.lock() {
+            map.insert(key, Instant::now());
+        }
+    }
+
+    pub fn is_muted(&self, path: &Path) -> bool {
+        let key = mute_key(path);
+        let Ok(mut map) = self.skip.lock() else {
+            return false;
+        };
+        map.retain(|_, at| at.elapsed() < Duration::from_secs(4));
+        map.contains_key(&key)
     }
 
     pub fn start(&self, app: AppHandle) {
@@ -70,17 +89,25 @@ impl WatchHub {
     }
 }
 
+fn mute_key(path: &Path) -> String {
+    normalize_abs(path)
+        .to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+}
+
 fn handle_events(app: &AppHandle, result: DebounceEventResult) {
     let events = match result {
         Ok(events) => events,
         Err(_) => return,
     };
     let db = app.state::<Db>();
+    let watchers = app.state::<WatchHub>();
     let mut changed = false;
 
     for event in events {
         for path in event.event.paths {
-            if noisy(&path) {
+            if noisy(&path) || watchers.is_muted(&path) {
                 continue;
             }
             match event.event.kind {

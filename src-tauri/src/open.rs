@@ -89,6 +89,21 @@ pub fn reveal(model: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn windows_properties(model: &Path) -> Result<()> {
+    if !model.exists() {
+        return Err(AppError::path("file does not exist", model));
+    }
+    let path = model.to_string_lossy().replace('\'', "''");
+    let script = format!(
+        "$p = '{path}'; $s = New-Object -ComObject Shell.Application; $f = $s.NameSpace([IO.Path]::GetDirectoryName($p)); $i = $f.ParseName([IO.Path]::GetFileName($p)); if ($i) {{ $i.InvokeVerb('Properties') }}; Start-Sleep -Seconds 60"
+    );
+    Command::new("powershell")
+        .args(["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", &script])
+        .spawn()
+        .map_err(|e| AppError::Message(e.to_string()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
