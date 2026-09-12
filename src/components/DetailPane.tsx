@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes } from "../lib/format";
-import { extLabel, fileNameFromRel } from "../lib/files";
+import { extLabel, fileNameFromRel, isCadPreviewExt } from "../lib/files";
 import { thumbUrl } from "../lib/thumbUrl";
 import type { FileRow, PlateRow, SlicerApp } from "../types";
 import { ModelViewer } from "./ModelViewer";
@@ -30,7 +30,9 @@ export function DetailPane({
   const [tagDraft, setTagDraft] = useState("");
   const [notes, setNotes] = useState(file.notes ?? "");
   const is3mf = file.ext === "3mf";
-  const showStlViewer = file.ext === "stl" || file.ext === "obj";
+  const showStlViewer =
+    file.ext === "stl" || file.ext === "obj" || isCadPreviewExt(file.ext);
+  const is3dm = file.ext === "3dm";
 
   useEffect(() => {
     setNotes(file.notes ?? "");
@@ -104,6 +106,12 @@ export function DetailPane({
           <div className="min-h-64">
             <ModelViewer file={file} />
           </div>
+        ) : null}
+        {is3dm ? (
+          <p className="mt-2 text-xs text-md-muted">
+            Rhino .3dm is indexed, but mesh preview is not available yet. Use a sidecar
+            image if you have one, or Open with the default app.
+          </p>
         ) : null}
         {is3mf ? (
           <div className="min-h-64">

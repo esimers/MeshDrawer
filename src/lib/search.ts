@@ -2,7 +2,7 @@ import type { FileRow } from "../types";
 
 export type FileFilter = {
   query: string;
-  ext: "all" | "stl" | "3mf" | "obj";
+  ext: "all" | "stl" | "3mf" | "obj" | "step" | "fbx" | "3dm";
   status: "all" | "unset" | "unprinted" | "printed" | "favorite";
   tag: string;
   minMb: string;
@@ -27,8 +27,14 @@ export function filterFiles(files: FileRow[], filter: FileFilter): FileRow[] {
   const maxBytes = Number.isFinite(max) && filter.maxMb.trim() !== "" ? max * 1024 * 1024 : null;
 
   return files.filter((file) => {
-    if (filter.ext !== "all" && file.ext !== filter.ext) {
-      return false;
+    if (filter.ext !== "all") {
+      if (filter.ext === "step") {
+        if (file.ext !== "step" && file.ext !== "stp") {
+          return false;
+        }
+      } else if (file.ext !== filter.ext) {
+        return false;
+      }
     }
     if (filter.status !== "all" && file.status !== filter.status) {
       return false;

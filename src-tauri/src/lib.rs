@@ -8,6 +8,7 @@ mod paths;
 mod scan;
 mod state;
 mod threemf;
+mod tessellate;
 mod thumbs;
 mod watch;
 
@@ -354,6 +355,22 @@ fn delete_library_file(
 }
 
 #[tauri::command]
+fn load_preview_mesh(db: State<Db>, id: i64) -> Result<Response, String> {
+    let file = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        db::get_file(&conn, id)
+            .map_err(String::from)?
+            .ok_or_else(|| "file not found".to_string())?
+    };
+    if !crate::ignore::is_cad_ext(&file.ext) {
+        return Err("not a tessellated CAD format".into());
+    }
+    let parts = tessellate::tessellate_path(Path::new(&file.abs_path), &file.ext)
+        .map_err(String::from)?;
+    Ok(Response::new(threemf::encode_mesh_blob(&parts)))
+}
+
+#[tauri::command]
 fn read_model_bytes(db: State<Db>, id: i64) -> Result<Response, String> {
     let path = file_abs(&db, id)?;
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
@@ -556,6 +573,7 @@ pub fn run() {
             open_in_slicer,
             reveal_in_explorer,
             read_model_bytes,
+            load_preview_mesh,
             save_thumb_png,
             set_thumb_status,
             list_plates,

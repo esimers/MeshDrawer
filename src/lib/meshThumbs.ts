@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { asUint8Array, toArrayBuffer } from "./bytes";
+import { decodeMeshBlob } from "./meshBlob";
+import { isCadPreviewExt, isMeshThumbExt } from "./files";
 import type { FileRow } from "../types";
 
 export const THUMB_TRI_CAP = 250_000;
@@ -128,9 +130,23 @@ export async function renderOneMeshThumb(file: FileRow): Promise<void> {
     return;
   }
 
-  const payload = await invoke("read_model_bytes", { id: file.id });
-  const bytes = asUint8Array(payload);
-  const geo = geometryFromBytes(file.ext, bytes);
+  let geo: THREE.BufferGeometry;
+  if (isCadPreviewExt(file.ext)) {
+    const payload = await invoke("load_preview_mesh", { id: file.id });
+    const parts = decodeMeshBlob(asUint8Array(payload));
+    if (parts.length === 0) {
+      throw new Error("CAD tessellation produced no mesh");
+    }
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(parts[0].vertices, 3));
+    if (parts[0].indices.length > 0) {
+      geo.setIndex(new THREE.BufferAttribute(parts[0].indices, 1));
+    }
+    geo.computeVertexNormals();
+  } else {
+    const payload = await invoke("read_model_bytes", { id: file.id });
+    geo = geometryFromBytes(file.ext, asUint8Array(payload));
+  }
   const tris = triangleCount(geo);
   if (tris > THUMB_TRI_CAP) {
     geo.dispose();
@@ -158,7 +174,5 @@ export async function renderOneMeshThumb(file: FileRow): Promise<void> {
 }
 
 export function needsMeshThumb(file: FileRow): boolean {
-  return (
-    file.thumbStatus === "none" && (file.ext === "stl" || file.ext === "obj")
-  );
+  return file.thumbStatus === "none" && isMeshThumbExt(file.ext);
 }

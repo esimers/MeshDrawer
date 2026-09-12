@@ -26,6 +26,9 @@ export function FilterBar({ filter, tags, resultCount, totalCount, onChange }: P
         <option value="stl">STL</option>
         <option value="3mf">3MF</option>
         <option value="obj">OBJ</option>
+        <option value="step">STEP</option>
+        <option value="fbx">FBX</option>
+        <option value="3dm">3DM</option>
       </select>
       <select
         value={filter.status}

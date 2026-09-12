@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extLabel, fileNameFromRel, fileStem } from "./files";
+import { extLabel, fileNameFromRel, fileStem, isCadPreviewExt } from "./files";
 
 describe("fileNameFromRel", () => {
   it("takes the last path segment", () => {
@@ -11,6 +11,16 @@ describe("fileNameFromRel", () => {
 describe("extLabel", () => {
   it("uppercases the extension", () => {
     expect(extLabel("stl")).toBe("STL");
+    expect(extLabel("stp")).toBe("STEP");
+  });
+});
+
+describe("isCadPreviewExt", () => {
+  it("marks STEP and FBX for tessellated preview", () => {
+    expect(isCadPreviewExt("step")).toBe(true);
+    expect(isCadPreviewExt("fbx")).toBe(true);
+    expect(isCadPreviewExt("3dm")).toBe(false);
+    expect(isCadPreviewExt("stl")).toBe(false);
   });
 });
 

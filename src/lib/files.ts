@@ -4,7 +4,18 @@ export function fileNameFromRel(relPath: string): string {
 }
 
 export function extLabel(ext: string): string {
+  if (ext === "stp") {
+    return "STEP";
+  }
   return ext.toUpperCase();
+}
+
+export function isCadPreviewExt(ext: string): boolean {
+  return ext === "step" || ext === "stp" || ext === "fbx";
+}
+
+export function isMeshThumbExt(ext: string): boolean {
+  return ext === "stl" || ext === "obj" || isCadPreviewExt(ext);
 }
 
 export function fileStem(relPath: string): string {

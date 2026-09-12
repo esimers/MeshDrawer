@@ -11,7 +11,11 @@ const SKIP_DIRS: &[&str] = &[
 const SKIP_FILE_SUFFIXES: &[&str] = &[".tmp", ".partial", ".download"];
 
 pub fn is_model_ext(ext: &str) -> bool {
-    matches!(ext, "stl" | "3mf" | "obj")
+    matches!(ext, "stl" | "3mf" | "obj" | "step" | "stp" | "fbx" | "3dm")
+}
+
+pub fn is_cad_ext(ext: &str) -> bool {
+    matches!(ext, "step" | "stp" | "fbx")
 }
 
 pub fn extension_lower(path: &Path) -> Option<String> {
@@ -94,7 +98,11 @@ mod tests {
         assert!(is_model_ext("stl"));
         assert!(is_model_ext("3mf"));
         assert!(is_model_ext("obj"));
-        assert!(!is_model_ext("step"));
+        assert!(is_model_ext("step"));
+        assert!(is_model_ext("stp"));
+        assert!(is_model_ext("fbx"));
+        assert!(is_model_ext("3dm"));
+        assert!(!is_model_ext("iges"));
     }
 
     #[test]

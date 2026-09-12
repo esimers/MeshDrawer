@@ -132,10 +132,13 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
     setError(null);
     setTooBig(null);
 
+    const cad = file.ext === "step" || file.ext === "stp" || file.ext === "fbx";
     const load =
       file.ext === "3mf"
         ? invoke("load_plate_mesh", { fileId: file.id, plateIndex })
-        : invoke("read_model_bytes", { id: file.id });
+        : cad
+          ? invoke("load_preview_mesh", { id: file.id })
+          : invoke("read_model_bytes", { id: file.id });
 
     load
       .then((payload) => {
@@ -158,10 +161,14 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
         key.position.set(4, 6, 5);
         scene.add(key);
 
-        if (file.ext === "3mf") {
+        if (file.ext === "3mf" || cad) {
           geos = addColoredParts(scene, bytes);
           if (geos.length === 0) {
-            setError("No mesh for this plate. Embedded image is shown above.");
+            setError(
+              file.ext === "3mf"
+                ? "No mesh for this plate. Embedded image is shown above."
+                : "Could not tessellate this CAD file.",
+            );
             return;
           }
         } else {

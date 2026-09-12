@@ -456,7 +456,7 @@ function App() {
         <section className="flex flex-1 flex-col items-center justify-center px-6">
           <p className="text-xl font-medium">Add a library folder</p>
           <p className="mt-3 max-w-md text-center text-sm leading-6 text-md-muted">
-            Point MeshDrawer at folders where your STL, 3MF, and OBJ files already live.
+            Point MeshDrawer at folders where your STL, 3MF, OBJ, STEP, FBX, and 3DM files already live.
             Nothing is uploaded or moved.
           </p>
           <button
