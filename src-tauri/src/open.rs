@@ -88,14 +88,34 @@ pub fn open_with(slicer_id: &str, model: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Explorer wants `/select,"C:\path\file.stl"` on the raw command line.
+/// Rust's normal `.arg()` quotes that as one token, and Explorer then opens a
+/// parent folder instead of highlighting the file.
+pub fn explorer_select_cmdline(path: &Path) -> String {
+    let native = dunce::simplified(path).to_string_lossy().replace('/', "\\");
+    format!("/select,\"{native}\"")
+}
+
 pub fn reveal(model: &Path) -> Result<()> {
     if !model.exists() {
         return Err(AppError::path("file does not exist", model));
     }
-    Command::new("explorer")
-        .arg(format!("/select,{}", model.display()))
-        .spawn()
-        .map_err(|e| AppError::Message(e.to_string()))?;
+    let path = dunce::canonicalize(model).unwrap_or_else(|_| model.to_path_buf());
+    let path = dunce::simplified(&path).to_path_buf();
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        Command::new("explorer")
+            .raw_arg(explorer_select_cmdline(&path))
+            .spawn()
+            .map_err(|e| AppError::Message(e.to_string()))?;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        return Err(AppError::Message("Show in Explorer is Windows-only".into()));
+    }
     Ok(())
 }
 
@@ -117,6 +137,13 @@ pub fn windows_properties(model: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explorer_select_quotes_windows_path() {
+        let arg = explorer_select_cmdline(Path::new(r"C:\3D Prints\Library\dragon.stl"));
+        assert_eq!(arg, r#"/select,"C:\3D Prints\Library\dragon.stl""#);
+        assert!(arg.contains(r"C:\3D Prints\Library\dragon.stl"));
+    }
 
     #[test]
     fn system_slicer_is_always_listed() {
