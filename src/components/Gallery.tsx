@@ -12,10 +12,11 @@ type Props = {
   files: FileRow[];
   thumbsDir: string | null;
   selectedId: number | null;
+  thumbOverrides?: Record<number, string>;
   onSelect: (file: FileRow) => void;
 };
 
-export function Gallery({ files, thumbsDir, selectedId, onSelect }: Props) {
+export function Gallery({ files, thumbsDir, selectedId, thumbOverrides, onSelect }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -69,10 +70,9 @@ export function Gallery({ files, thumbsDir, selectedId, onSelect }: Props) {
               }}
             >
               {slice.map((file) => {
+                const thumbName = thumbOverrides?.[file.id] ?? file.thumbPath;
                 const src =
-                  file.thumbPath && thumbsDir
-                    ? thumbUrl(thumbsDir, file.thumbPath)
-                    : null;
+                  thumbName && thumbsDir ? thumbUrl(thumbsDir, thumbName) : null;
                 const selected = file.id === selectedId;
                 return (
                   <button

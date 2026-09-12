@@ -5,6 +5,7 @@ mod open;
 mod paths;
 mod scan;
 mod state;
+mod threemf;
 mod thumbs;
 mod watch;
 
@@ -13,7 +14,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use db::{AppInfo, Db, FileRow, LibraryRoot};
+use db::{AppInfo, Db, FileRow, LibraryRoot, PlateRow};
 use open::SlicerApp;
 use scan::ScanProgress;
 use state::ScanState;
@@ -135,6 +136,31 @@ fn save_thumb_png(app: AppHandle, db: State<Db>, id: i64, png: Vec<u8>) -> Resul
     drop(conn);
     let _ = app.emit("thumb-ready", ready.clone());
     Ok(ready)
+}
+
+#[tauri::command]
+fn list_plates(db: State<Db>, file_id: i64) -> Result<Vec<PlateRow>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::list_plates(&conn, file_id).map_err(String::from)
+}
+
+#[tauri::command]
+fn load_plate_mesh(db: State<Db>, file_id: i64, plate_index: i64) -> Result<Response, String> {
+    let (abs, object_ids) = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        let file = db::get_file(&conn, file_id)
+            .map_err(String::from)?
+            .ok_or_else(|| "file not found".to_string())?;
+        let plates = db::list_plates(&conn, file_id).map_err(String::from)?;
+        let ids = plates
+            .into_iter()
+            .find(|p| p.plate_index == plate_index)
+            .map(|p| p.object_ids)
+            .unwrap_or_default();
+        (file.abs_path, ids)
+    };
+    let parts = threemf::load_plate_meshes(Path::new(&abs), &object_ids).map_err(String::from)?;
+    Ok(Response::new(threemf::encode_mesh_blob(&parts)))
 }
 
 #[tauri::command]
@@ -275,7 +301,9 @@ pub fn run() {
             reveal_in_explorer,
             read_model_bytes,
             save_thumb_png,
-            set_thumb_status
+            set_thumb_status,
+            list_plates,
+            load_plate_mesh
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

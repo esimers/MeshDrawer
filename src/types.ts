@@ -32,6 +32,13 @@ export type SlicerApp = {
   available: boolean;
 };
 
+export type PlateRow = {
+  plateIndex: number;
+  name: string | null;
+  thumbPath: string | null;
+  objectIds: number[];
+};
+
 export type ThumbReady = {
   id: number;
   thumbPath: string | null;

@@ -1,8 +1,9 @@
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes } from "../lib/format";
 import { extLabel, fileNameFromRel } from "../lib/files";
 import { thumbUrl } from "../lib/thumbUrl";
-import type { FileRow, SlicerApp } from "../types";
+import type { FileRow, PlateRow, SlicerApp } from "../types";
 import { ModelViewer } from "./ModelViewer";
 
 type Props = {
@@ -11,12 +12,49 @@ type Props = {
   slicers: SlicerApp[];
   onClose: () => void;
   onError: (message: string) => void;
+  onPlateThumb: (fileId: number, thumbPath: string | null) => void;
 };
 
-export function DetailPane({ file, thumbsDir, slicers, onClose, onError }: Props) {
+export function DetailPane({
+  file,
+  thumbsDir,
+  slicers,
+  onClose,
+  onError,
+  onPlateThumb,
+}: Props) {
+  const [plates, setPlates] = useState<PlateRow[]>([]);
+  const [plateIndex, setPlateIndex] = useState(1);
+  const is3mf = file.ext === "3mf";
+  const showStlViewer = file.ext === "stl" || file.ext === "obj";
+
+  useEffect(() => {
+    setPlateIndex(1);
+    setPlates([]);
+    if (!is3mf) {
+      return;
+    }
+    invoke<PlateRow[]>("list_plates", { fileId: file.id })
+      .then((rows) => {
+        setPlates(rows);
+        const first = rows[0]?.plateIndex ?? 1;
+        setPlateIndex(first);
+        onPlateThumb(file.id, rows[0]?.thumbPath ?? file.thumbPath);
+      })
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : String(err));
+      });
+  }, [file.id, file.ext, file.thumbPath, is3mf, onError, onPlateThumb]);
+
+  const selectedPlate = plates.find((p) => p.plateIndex === plateIndex);
+  const plateThumbName = selectedPlate?.thumbPath ?? file.thumbPath;
   const thumb =
-    file.thumbPath && thumbsDir ? thumbUrl(thumbsDir, file.thumbPath) : null;
-  const showViewer = file.ext === "stl" || file.ext === "obj";
+    plateThumbName && thumbsDir ? thumbUrl(thumbsDir, plateThumbName) : null;
+
+  function selectPlate(plate: PlateRow) {
+    setPlateIndex(plate.plateIndex);
+    onPlateThumb(file.id, plate.thumbPath);
+  }
 
   async function reveal() {
     try {
@@ -35,7 +73,7 @@ export function DetailPane({ file, thumbsDir, slicers, onClose, onError }: Props
   }
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-zinc-800 bg-zinc-900/40">
+    <aside className="flex w-[400px] shrink-0 flex-col border-l border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <h2 className="truncate text-sm font-medium">{fileNameFromRel(file.relPath)}</h2>
         <button
@@ -48,26 +86,57 @@ export function DetailPane({ file, thumbsDir, slicers, onClose, onError }: Props
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
-        {showViewer ? (
-          <ModelViewer file={file} />
-        ) : thumb ? (
+        {is3mf && thumb ? (
           <img
             src={thumb}
             alt=""
-            className="h-64 w-full rounded-md bg-zinc-950 object-contain"
+            className="mb-3 h-40 w-full rounded-md bg-zinc-950 object-contain"
           />
-        ) : (
+        ) : null}
+
+        {showStlViewer ? <ModelViewer file={file} /> : null}
+        {is3mf ? <ModelViewer file={file} plateIndex={plateIndex} /> : null}
+        {!showStlViewer && !is3mf && !thumb ? (
           <div className="flex h-64 items-center justify-center rounded-md bg-zinc-950 text-sm text-zinc-500">
             No preview yet
           </div>
-        )}
+        ) : null}
 
-        {!showViewer && file.ext === "3mf" ? (
-          <p className="mt-2 text-xs text-zinc-500">
-            Plate mesh preview is next. Embedded plate image is shown when the 3MF
-            includes one.
-            {file.plateCount > 1 ? ` ${file.plateCount} plates.` : ""}
-          </p>
+        {plates.length > 1 ? (
+          <div className="mt-3">
+            <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Plates</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {plates.map((plate) => {
+                const src =
+                  plate.thumbPath && thumbsDir
+                    ? thumbUrl(thumbsDir, plate.thumbPath)
+                    : null;
+                const active = plate.plateIndex === plateIndex;
+                return (
+                  <button
+                    key={plate.plateIndex}
+                    type="button"
+                    onClick={() => selectPlate(plate)}
+                    className={`w-20 shrink-0 overflow-hidden rounded border ${
+                      active ? "border-teal-400" : "border-zinc-700"
+                    }`}
+                    title={plate.name || `Plate ${plate.plateIndex}`}
+                  >
+                    {src ? (
+                      <img src={src} alt="" className="h-14 w-full object-cover" />
+                    ) : (
+                      <div className="flex h-14 items-center justify-center bg-zinc-950 text-[10px] text-zinc-400">
+                        {plate.plateIndex}
+                      </div>
+                    )}
+                    <span className="block truncate px-1 py-0.5 text-[10px] text-zinc-300">
+                      {plate.name || `Plate ${plate.plateIndex}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : null}
 
         <dl className="mt-4 space-y-1 text-xs text-zinc-400">
@@ -79,10 +148,12 @@ export function DetailPane({ file, thumbsDir, slicers, onClose, onError }: Props
             <dt>Size</dt>
             <dd className="text-zinc-200">{formatBytes(file.size)}</dd>
           </div>
-          <div className="flex justify-between gap-3">
-            <dt>Thumb</dt>
-            <dd className="text-zinc-200">{file.thumbStatus}</dd>
-          </div>
+          {file.plateCount > 0 ? (
+            <div className="flex justify-between gap-3">
+              <dt>Plates</dt>
+              <dd className="text-zinc-200">{file.plateCount}</dd>
+            </div>
+          ) : null}
         </dl>
         <p className="mt-3 break-all font-mono text-[11px] text-zinc-500">{file.absPath}</p>
       </div>

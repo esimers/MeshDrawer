@@ -45,6 +45,7 @@ function App() {
   const [progress, setProgress] = useState<ScanProgress>(emptyProgress);
   const [slicers, setSlicers] = useState<SlicerApp[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [thumbOverrides, setThumbOverrides] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [thumbTick, setThumbTick] = useState(0);
@@ -143,6 +144,17 @@ function App() {
         setThumbTick((n) => n + 1);
       });
   }, [files, progress.running, thumbTick]);
+
+  const handlePlateThumb = useCallback((fileId: number, thumbPath: string | null) => {
+    setThumbOverrides((prev) => {
+      if (!thumbPath) {
+        const next = { ...prev };
+        delete next[fileId];
+        return next;
+      }
+      return { ...prev, [fileId]: thumbPath };
+    });
+  }, []);
 
   const selected = files.find((file) => file.id === selectedId) ?? null;
 
@@ -271,6 +283,7 @@ function App() {
             files={files}
             thumbsDir={info?.thumbsDir ?? null}
             selectedId={selectedId}
+            thumbOverrides={thumbOverrides}
             onSelect={(file) => setSelectedId(file.id)}
           />
           {selected ? (
@@ -280,6 +293,7 @@ function App() {
               slicers={slicers}
               onClose={() => setSelectedId(null)}
               onError={setError}
+              onPlateThumb={handlePlateThumb}
             />
           ) : null}
         </div>

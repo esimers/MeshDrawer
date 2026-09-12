@@ -5,12 +5,14 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { invoke } from "@tauri-apps/api/core";
 import { asUint8Array, toArrayBuffer } from "../lib/bytes";
+import { decodeMeshBlob } from "../lib/meshBlob";
 import type { FileRow } from "../types";
 
 const VIEW_TRI_CAP = 1_000_000;
 
 type Props = {
   file: FileRow;
+  plateIndex?: number;
 };
 
 function parseGeometry(ext: string, bytes: Uint8Array): THREE.BufferGeometry {
@@ -45,7 +47,31 @@ function triangleCount(geo: THREE.BufferGeometry): number {
   return pos ? Math.floor(pos.count / 3) : 0;
 }
 
-export function ModelViewer({ file }: Props) {
+function addColoredParts(scene: THREE.Scene, payload: Uint8Array): THREE.BufferGeometry[] {
+  const parts = decodeMeshBlob(payload);
+  const geos: THREE.BufferGeometry[] = [];
+  for (const part of parts) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(part.vertices, 3));
+    if (part.indices.length > 0) {
+      geo.setIndex(new THREE.BufferAttribute(part.indices, 1));
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(part.color[0], part.color[1], part.color[2]),
+        metalness: 0.08,
+        roughness: 0.42,
+      }),
+    );
+    scene.add(mesh);
+    geos.push(geo);
+  }
+  return geos;
+}
+
+export function ModelViewer({ file, plateIndex = 1 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,27 +85,24 @@ export function ModelViewer({ file }: Props) {
     let cancelled = false;
     let renderer: THREE.WebGLRenderer | null = null;
     let controls: OrbitControls | null = null;
-    let geo: THREE.BufferGeometry | null = null;
+    let geos: THREE.BufferGeometry[] = [];
     let frame = 0;
 
     setLoading(true);
     setError(null);
     setTooBig(null);
 
-    invoke("read_model_bytes", { id: file.id })
+    const load =
+      file.ext === "3mf"
+        ? invoke("load_plate_mesh", { fileId: file.id, plateIndex })
+        : invoke("read_model_bytes", { id: file.id });
+
+    load
       .then((payload) => {
         if (cancelled || !hostRef.current) {
           return;
         }
         const bytes = asUint8Array(payload);
-        geo = parseGeometry(file.ext, bytes);
-        const tris = triangleCount(geo);
-        if (tris > VIEW_TRI_CAP) {
-          setTooBig(tris);
-          geo.dispose();
-          geo = null;
-          return;
-        }
 
         const width = host.clientWidth || 360;
         const height = host.clientHeight || 256;
@@ -95,28 +118,53 @@ export function ModelViewer({ file }: Props) {
         key.position.set(4, 6, 5);
         scene.add(key);
 
-        geo.computeBoundingBox();
-        const box = geo.boundingBox ?? new THREE.Box3();
+        if (file.ext === "3mf") {
+          geos = addColoredParts(scene, bytes);
+          if (geos.length === 0) {
+            setError("No mesh for this plate. Embedded image is shown above.");
+            return;
+          }
+        } else {
+          const geo = parseGeometry(file.ext, bytes);
+          const tris = triangleCount(geo);
+          if (tris > VIEW_TRI_CAP) {
+            setTooBig(tris);
+            geo.dispose();
+            return;
+          }
+          geo.computeVertexNormals();
+          scene.add(
+            new THREE.Mesh(
+              geo,
+              new THREE.MeshStandardMaterial({
+                color: 0x5eead4,
+                metalness: 0.08,
+                roughness: 0.42,
+              }),
+            ),
+          );
+          geos = [geo];
+        }
+
+        const box = new THREE.Box3();
+        for (const geo of geos) {
+          geo.computeBoundingBox();
+          if (geo.boundingBox) {
+            box.union(geo.boundingBox);
+          }
+        }
         const center = new THREE.Vector3();
         const size = new THREE.Vector3();
         box.getCenter(center);
         box.getSize(size);
-        geo.translate(-center.x, -center.y, -center.z);
+        for (const geo of geos) {
+          geo.translate(-center.x, -center.y, -center.z);
+        }
         const maxDim = Math.max(size.x, size.y, size.z, 1);
 
         const camera = new THREE.PerspectiveCamera(40, width / height, maxDim / 100, maxDim * 20);
         camera.position.set(maxDim * 1.2, maxDim * 0.9, maxDim * 1.2);
         camera.lookAt(0, 0, 0);
-
-        const mesh = new THREE.Mesh(
-          geo,
-          new THREE.MeshStandardMaterial({
-            color: 0x5eead4,
-            metalness: 0.08,
-            roughness: 0.42,
-          }),
-        );
-        scene.add(mesh);
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -147,10 +195,10 @@ export function ModelViewer({ file }: Props) {
       cancelAnimationFrame(frame);
       controls?.dispose();
       renderer?.dispose();
-      geo?.dispose();
+      geos.forEach((geo) => geo.dispose());
       host.replaceChildren();
     };
-  }, [file.id, file.ext]);
+  }, [file.id, file.ext, plateIndex]);
 
   return (
     <div className="relative h-64 w-full overflow-hidden rounded-md bg-zinc-950">

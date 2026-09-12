@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 use crate::paths::normalize_abs;
@@ -48,6 +48,15 @@ pub struct FileRow {
 pub struct CompanionRecord {
     pub abs_path: String,
     pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlateRow {
+    pub plate_index: i64,
+    pub name: Option<String>,
+    pub thumb_path: Option<String>,
+    pub object_ids: Vec<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -318,14 +327,61 @@ pub fn update_thumb(
     Ok(())
 }
 
+pub fn replace_plates(conn: &Connection, file_id: i64, plates: &[PlateRow]) -> Result<()> {
+    conn.execute("DELETE FROM plates WHERE file_id = ?1", params![file_id])?;
+    for plate in plates {
+        let ids = serde_json::to_string(&plate.object_ids).unwrap_or_else(|_| "[]".into());
+        conn.execute(
+            "INSERT INTO plates (file_id, plate_index, name, thumb_path, object_ids)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                file_id,
+                plate.plate_index,
+                plate.name,
+                plate.thumb_path,
+                ids
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn list_plates(conn: &Connection, file_id: i64) -> Result<Vec<PlateRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT plate_index, name, thumb_path, object_ids FROM plates
+         WHERE file_id = ?1 ORDER BY plate_index ASC",
+    )?;
+    let rows = stmt.query_map(params![file_id], |row| {
+        let ids: String = row.get(3)?;
+        let object_ids = serde_json::from_str(&ids).unwrap_or_default();
+        Ok(PlateRow {
+            plate_index: row.get(0)?,
+            name: row.get(1)?,
+            thumb_path: row.get(2)?,
+            object_ids,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
          FROM files
-         WHERE thumb_status = 'none'
-           AND (
+         WHERE (
+             thumb_status = 'none'
+             AND (
+               ext = '3mf'
+               OR id IN (SELECT file_id FROM companions WHERE kind = 'image')
+             )
+           )
+           OR (
              ext = '3mf'
-             OR id IN (SELECT file_id FROM companions WHERE kind = 'image')
+             AND NOT EXISTS (SELECT 1 FROM plates WHERE plates.file_id = files.id)
            )",
     )?;
     let rows = stmt.query_map([], file_from_row)?;

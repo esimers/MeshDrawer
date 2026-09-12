@@ -24,6 +24,10 @@ pub fn cover_name(file_id: i64) -> String {
     format!("{file_id}_cover.png")
 }
 
+pub fn plate_thumb_name(file_id: i64, plate_index: i64) -> String {
+    format!("{file_id}_plate_{plate_index}.png")
+}
+
 pub fn cover_abs(file_id: i64) -> Result<PathBuf> {
     Ok(thumbs_dir()?.join(cover_name(file_id)))
 }
@@ -198,15 +202,48 @@ pub fn write_cover(file_id: i64, png: &[u8]) -> Result<String> {
 }
 
 pub fn apply_embedded_3mf(conn: &rusqlite::Connection, file_id: i64, abs_path: &Path) -> Result<Option<ThumbReady>> {
-    let Some((png, plate_count)) = extract_3mf_cover(abs_path)? else {
+    let plates = crate::threemf::extract_plates(abs_path)?;
+    if plates.is_empty() {
         return Ok(None);
-    };
-    let name = write_cover(file_id, &png)?;
-    db::update_thumb(conn, file_id, "embedded", Some(&name), Some(plate_count), None)?;
+    }
+    paths::ensure_app_dirs()?;
+    let mut rows = Vec::new();
+    let mut cover = None;
+    for plate in plates {
+        let thumb_path = if let Some(png) = plate.thumb_png {
+            let name = plate_thumb_name(file_id, plate.index);
+            fs::write(thumbs_dir()?.join(&name), &png)?;
+            if cover.is_none() {
+                let cover_name = write_cover(file_id, &png)?;
+                cover = Some(cover_name);
+            }
+            Some(name)
+        } else {
+            None
+        };
+        rows.push(db::PlateRow {
+            plate_index: plate.index,
+            name: plate.name,
+            thumb_path,
+            object_ids: plate.object_ids,
+        });
+    }
+    let plate_count = rows.len() as i64;
+    db::replace_plates(conn, file_id, &rows)?;
+    let cover_name = cover.or_else(|| rows.iter().find_map(|r| r.thumb_path.clone()));
+    if let Some(name) = &cover_name {
+        db::update_thumb(conn, file_id, "embedded", Some(name), Some(plate_count), None)?;
+    } else {
+        db::update_thumb(conn, file_id, "none", None, Some(plate_count), None)?;
+    }
     Ok(Some(ThumbReady {
         id: file_id,
-        thumb_path: Some(name),
-        thumb_status: "embedded".into(),
+        thumb_path: cover_name,
+        thumb_status: if plate_count > 0 && rows.iter().any(|r| r.thumb_path.is_some()) {
+            "embedded".into()
+        } else {
+            "none".into()
+        },
         plate_count,
     }))
 }
