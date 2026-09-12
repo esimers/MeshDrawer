@@ -21,6 +21,14 @@ pub struct LibraryRoot {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ScanErrorRow {
+    pub path: String,
+    pub message: String,
+    pub seen_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppInfo {
     pub db_path: String,
     pub thumbs_dir: String,
@@ -86,7 +94,10 @@ pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;",
+         PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA cache_size = -20000;",
     )?;
     migrate(&conn)?;
     Ok(conn)
@@ -100,7 +111,7 @@ fn migrate(conn: &Connection) -> Result<()> {
         );",
     )?;
 
-    let current: i64 = conn
+    let mut current: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
             [],
@@ -112,6 +123,14 @@ fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("../migrations/001_init.sql"))?;
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?1)",
+            params![now_ms()],
+        )?;
+        current = 1;
+    }
+    if current < 2 {
+        conn.execute_batch(include_str!("../migrations/002_hardening.sql"))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (2, ?1)",
             params![now_ms()],
         )?;
     }
@@ -154,6 +173,45 @@ pub fn add_root(conn: &Connection, path: &Path) -> Result<(i64, Vec<LibraryRoot>
         |row| row.get(0),
     )?;
     Ok((id, list_roots(conn)?))
+}
+
+pub fn clear_scan_errors(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM scan_errors", [])?;
+    Ok(())
+}
+
+pub fn record_scan_error(conn: &Connection, path: &str, message: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO scan_errors (path, message, seen_at) VALUES (?1, ?2, ?3)",
+        params![path, message, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn list_scan_errors(conn: &Connection) -> Result<Vec<ScanErrorRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT path, message, seen_at FROM scan_errors ORDER BY seen_at DESC LIMIT 200",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ScanErrorRow {
+            path: row.get(0)?,
+            message: row.get(1)?,
+            seen_at: row.get(2)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn set_file_last_error(conn: &Connection, id: i64, message: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET last_error = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, message, now_ms()],
+    )?;
+    Ok(())
 }
 
 pub fn file_count(conn: &Connection) -> Result<i64> {
@@ -675,7 +733,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 
     #[test]

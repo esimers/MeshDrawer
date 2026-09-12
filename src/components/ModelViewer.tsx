@@ -194,8 +194,14 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
       cancelled = true;
       cancelAnimationFrame(frame);
       controls?.dispose();
-      renderer?.dispose();
-      geos.forEach((geo) => geo.dispose());
+      geos.forEach((geo) => {
+        geo.dispose();
+      });
+      if (renderer) {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        renderer.domElement.remove();
+      }
       host.replaceChildren();
     };
   }, [file.id, file.ext, plateIndex]);

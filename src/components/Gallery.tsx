@@ -49,7 +49,7 @@ export function Gallery({
     count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => CARD_HEIGHT,
-    overscan: 6,
+    overscan: 4,
   });
 
   if (files.length === 0) {
@@ -96,15 +96,27 @@ export function Gallery({
                       onContextMenu(file, event.clientX, event.clientY);
                     }}
                     title={`${file.absPath}\nRight-click for options`}
-                    className={`flex h-[184px] flex-col overflow-hidden rounded-lg border text-left ${
+                    className={`flex h-[184px] flex-col overflow-hidden rounded-lg border text-left [content-visibility:auto] ${
                       selected
                         ? "border-teal-400 bg-zinc-900"
                         : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-600"
                     }`}
                   >
-                    <div className="flex h-28 items-center justify-center bg-zinc-950">
+                    <div className="relative flex h-28 items-center justify-center bg-zinc-950">
+                      {file.lastError ? (
+                        <span
+                          className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500"
+                          title={file.lastError}
+                        />
+                      ) : null}
                       {src ? (
-                        <img src={src} alt="" className="h-full w-full object-contain" />
+                        <img
+                          src={src}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-contain"
+                        />
                       ) : (
                         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-teal-300">
                           {extLabel(file.ext)}

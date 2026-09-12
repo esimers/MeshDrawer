@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use db::{AppInfo, AppSettings, Db, FileRow, LibraryRoot, PlateRow};
+use db::{AppInfo, AppSettings, Db, FileRow, LibraryRoot, PlateRow, ScanErrorRow};
 use hash::{DuplicateGroup, HashProgress, HashState};
 use open::SlicerApp;
 use scan::ScanProgress;
@@ -60,6 +60,12 @@ fn list_roots(db: State<Db>) -> Result<Vec<LibraryRoot>, String> {
 fn list_files(db: State<Db>) -> Result<Vec<FileRow>, String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::list_files(&conn).map_err(String::from)
+}
+
+#[tauri::command]
+fn list_scan_errors(db: State<Db>) -> Result<Vec<ScanErrorRow>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::list_scan_errors(&conn).map_err(String::from)
 }
 
 #[tauri::command]
@@ -541,6 +547,7 @@ pub fn run() {
             list_roots,
             list_files,
             get_scan_status,
+            list_scan_errors,
             pause_scan,
             resume_scan,
             add_library_folder,

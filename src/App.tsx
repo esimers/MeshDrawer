@@ -19,6 +19,7 @@ import type {
   AppSettings,
   DuplicateGroup,
   FileRow,
+  ScanErrorRow,
   HashProgress,
   LibraryRoot,
   ScanProgress,
@@ -83,12 +84,14 @@ function App() {
   const [filter, setFilter] = useState<FileFilter>(emptyFilter);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [scanErrors, setScanErrors] = useState<ScanErrorRow[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
   const [dupeGroups, setDupeGroups] = useState<DuplicateGroup[]>([]);
   const [hashProgress, setHashProgress] = useState<HashProgress>(emptyHash);
   const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
-    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers, nextHash, nextDupes, nextTags, nextSettings] =
+    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers, nextHash, nextDupes, nextTags, nextSettings, nextScanErrors] =
       await Promise.all([
         invoke<LibraryRoot[]>("list_roots"),
         invoke<FileRow[]>("list_files"),
@@ -99,6 +102,7 @@ function App() {
         invoke<DuplicateGroup[]>("list_duplicate_groups"),
         invoke<string[]>("list_tags"),
         invoke<AppSettings>("get_app_settings"),
+        invoke<ScanErrorRow[]>("list_scan_errors"),
       ]);
     setRoots(nextRoots);
     setFiles(nextFiles);
@@ -109,6 +113,7 @@ function App() {
     setDupeGroups(nextDupes);
     setAllTags(nextTags);
     setSettings(nextSettings);
+    setScanErrors(nextScanErrors);
   }, []);
 
   useEffect(() => {
@@ -422,6 +427,24 @@ function App() {
           <span className="ml-3 max-w-[40%] truncate font-mono text-[11px] text-zinc-600">
             {hashProgress.currentPath}
           </span>
+        </div>
+      ) : null}
+
+      {scanErrors.length > 0 ? (
+        <div className="border-b border-amber-900/60 bg-amber-950/20 px-4 py-2 text-xs text-amber-200">
+          <button type="button" onClick={() => setShowErrors((v) => !v)} className="font-medium">
+            {scanErrors.length} unreadable or locked file{scanErrors.length === 1 ? "" : "s"}{" "}
+            {showErrors ? "▾" : "▸"}
+          </button>
+          {showErrors ? (
+            <ul className="mt-2 max-h-32 space-y-1 overflow-auto font-mono text-[11px] text-amber-100/80">
+              {scanErrors.slice(0, 50).map((row) => (
+                <li key={`${row.path}-${row.seenAt}`} className="truncate" title={row.path}>
+                  {row.message} — {row.path}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 

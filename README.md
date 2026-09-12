@@ -42,6 +42,8 @@ cd src-tauri && cargo test
 npm run tauri build
 ```
 
+Windows installers (current-user NSIS, plus MSI if WiX is present) land in `src-tauri/target/release/bundle/`. Manual QA: `docs/qa-v1.md`.
+
 App data (database + thumbnail cache) lives at `%LOCALAPPDATA%\MeshDrawer\`. Source folders are never written to.
 
 ## License

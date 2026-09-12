@@ -142,10 +142,22 @@ pub fn find_companions(model: &Path) -> Vec<CompanionRecord> {
     out
 }
 
+pub fn io_message(err: &std::io::Error) -> String {
+    if err.raw_os_error() == Some(32) {
+        return "file in use (locked)".into();
+    }
+    match err.kind() {
+        std::io::ErrorKind::PermissionDenied => "locked or permission denied".into(),
+        std::io::ErrorKind::NotFound => "missing".into(),
+        _ => err.to_string(),
+    }
+}
+
 pub fn walk_root(
     root: &Path,
     mut on_file: impl FnMut(DiscoveredFile) -> Result<()>,
     mut on_tick: impl FnMut(u64, u64, &Path),
+    mut on_error: impl FnMut(&Path, String),
     should_pause: impl Fn() -> bool,
     cancelled: impl Fn() -> bool,
     extra_excludes: &[String],
@@ -175,8 +187,10 @@ pub fn walk_root(
 
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => {
+            Err(err) => {
                 errors += 1;
+                let path = err.path().map(|p| p.to_path_buf()).unwrap_or_else(|| root.clone());
+                on_error(&path, err.to_string());
                 continue;
             }
         };
@@ -197,8 +211,15 @@ pub fn walk_root(
                 on_file(found)?;
             }
             Ok(None) => {}
-            Err(_) => {
+            Err(err) => {
                 errors += 1;
+                let msg = err.to_string();
+                let msg = if msg.contains("os error 32") {
+                    io_message(&std::io::Error::from_raw_os_error(32))
+                } else {
+                    msg
+                };
+                on_error(entry.path(), msg);
             }
         }
     }
@@ -226,6 +247,11 @@ pub fn scan_root(
     state: &ScanState,
     mut emit: impl FnMut(ScanProgress),
 ) -> Result<ScanProgress> {
+    {
+        if let Ok(conn) = db.0.lock() {
+            let _ = db::clear_scan_errors(&conn);
+        }
+    }
     let extra_excludes = {
         let conn = db.0.lock().ok();
         conn.and_then(|c| db::get_setting(&c, "exclude_patterns").ok().flatten())
@@ -235,6 +261,7 @@ pub fn scan_root(
             .filter(|s| !s.trim().is_empty())
             .collect::<Vec<_>>()
     };
+    let mut errors_buf: Vec<(String, String)> = Vec::new();
     let indexed = Cell::new(0_u64);
     let mut last_emit = Instant::now() - PROGRESS_EVERY;
     let mut current = String::new();
@@ -287,12 +314,23 @@ pub fn scan_root(
                 last_emit = Instant::now();
             }
         },
+        |path, message| {
+            errors_buf.push((path.display().to_string(), message));
+        },
         || state.pause.load(Ordering::SeqCst),
         || state.cancel.load(Ordering::SeqCst),
         &extra_excludes,
     )?;
 
     flush(&mut batch)?;
+
+    if !errors_buf.is_empty() {
+        if let Ok(conn) = db.0.lock() {
+            for (path, message) in &errors_buf {
+                let _ = db::record_scan_error(&conn, path, message);
+            }
+        }
+    }
 
     if !state.cancel.load(Ordering::SeqCst) {
         let conn = db
@@ -353,6 +391,7 @@ mod tests {
                 Ok(())
             },
             |_, _, _| {},
+            |_, _| {},
             || false,
             || false,
             &[],
@@ -374,6 +413,12 @@ mod tests {
         assert_eq!(dragon.rel_path.replace('\\', "/"), "dragon.STL");
         assert_eq!(dragon.companions.len(), 1);
         assert_eq!(dragon.companions[0].kind, "image");
+    }
+
+    #[test]
+    fn locked_file_message() {
+        let err = std::io::Error::from_raw_os_error(32);
+        assert!(io_message(&err).contains("locked"));
     }
 
     #[test]

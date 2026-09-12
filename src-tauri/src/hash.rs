@@ -145,7 +145,10 @@ pub fn run_pending(
                 hashed += 1;
             }
             Err(err) => {
-                eprintln!("hash {}: {err}", file.abs_path);
+                if let Ok(conn) = db.0.lock() {
+                    let _ = db::set_file_last_error(&conn, file.id, Some(&err.to_string()));
+                    let _ = db::record_scan_error(&conn, &file.abs_path, &err.to_string());
+                }
             }
         }
         thread::sleep(Duration::from_millis(5));

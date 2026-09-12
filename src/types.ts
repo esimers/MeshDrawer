@@ -71,6 +71,12 @@ export type DuplicateGroup = {
   files: FileRow[];
 };
 
+export type ScanErrorRow = {
+  path: string;
+  message: string;
+  seenAt: number;
+};
+
 export type ScanProgress = {
   running: boolean;
   paused: boolean;
