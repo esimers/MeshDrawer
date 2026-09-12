@@ -1,6 +1,7 @@
 mod db;
 mod error;
 mod files;
+mod hash;
 mod ignore;
 mod open;
 mod paths;
@@ -16,6 +17,7 @@ use std::sync::atomic::Ordering;
 use std::thread;
 
 use db::{AppInfo, Db, FileRow, LibraryRoot, PlateRow};
+use hash::{DuplicateGroup, HashProgress, HashState};
 use open::SlicerApp;
 use scan::ScanProgress;
 use state::ScanState;
@@ -165,6 +167,77 @@ fn rename_library_file(
 }
 
 #[tauri::command]
+fn get_hash_status(hash: State<HashState>) -> HashProgress {
+    hash.snapshot()
+}
+
+#[tauri::command]
+fn list_duplicate_groups(db: State<Db>) -> Result<Vec<DuplicateGroup>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::list_duplicate_groups(&conn).map_err(String::from)
+}
+
+#[tauri::command]
+fn ignore_duplicate_group(db: State<Db>, sha256: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::ignore_hash(&conn, &sha256).map_err(String::from)
+}
+
+#[tauri::command]
+fn quarantine_file(
+    app: AppHandle,
+    db: State<Db>,
+    watchers: State<WatchHub>,
+    id: i64,
+) -> Result<String, String> {
+    let file = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        db::get_file(&conn, id)
+            .map_err(String::from)?
+            .ok_or_else(|| "file not found".to_string())?
+    };
+    let src = PathBuf::from(&file.abs_path);
+    if !src.exists() {
+        return Err("file is missing on disk".into());
+    }
+    let dest_dir = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        quarantine_dir(&conn)?
+    };
+    fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    let name = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "invalid file name".to_string())?;
+    let dest = files::unique_in_dir(&dest_dir, name);
+    watchers.mute(&src);
+    watchers.mute(&dest);
+    if fs::rename(&src, &dest).is_err() {
+        fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+        fs::remove_file(&src).map_err(|e| e.to_string())?;
+    }
+    {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        db::delete_file_row(&conn, id).map_err(String::from)?;
+    }
+    let _ = app.emit("library-changed", ());
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+fn quarantine_dir(conn: &rusqlite::Connection) -> Result<PathBuf, String> {
+    if let Some(custom) = db::get_setting(conn, "quarantine_dir").map_err(String::from)? {
+        return Ok(PathBuf::from(custom));
+    }
+    let roots = db::list_roots(conn).map_err(String::from)?;
+    if let Some(root) = roots.first() {
+        return Ok(Path::new(&root.path).join(".meshdrewer-quarantine"));
+    }
+    Ok(paths::app_data_dir()
+        .map_err(String::from)?
+        .join("quarantine"))
+}
+
+#[tauri::command]
 fn delete_library_file(
     app: AppHandle,
     db: State<Db>,
@@ -255,6 +328,8 @@ fn set_thumb_status(
 }
 
 fn spawn_scan(app: AppHandle, root_ids: Option<Vec<i64>>) {
+    let hash = app.state::<HashState>();
+    hash.request_cancel();
     let scan = app.state::<ScanState>();
     if !scan.begin() {
         return;
@@ -322,6 +397,23 @@ fn spawn_thumb_extract(app: AppHandle) {
             }
             Err(err) => eprintln!("embedded thumb extract failed: {err}"),
         }
+        spawn_hash(app);
+    });
+}
+
+fn spawn_hash(app: AppHandle) {
+    thread::spawn(move || {
+        let db = app.state::<Db>();
+        let scan = app.state::<ScanState>();
+        let hash = app.state::<HashState>();
+        match hash::run_pending(&db, &scan, &hash, |progress| {
+            let _ = app.emit("hash-progress", progress);
+        }) {
+            Ok(_) => {
+                let _ = app.emit("hash-complete", ());
+            }
+            Err(err) => eprintln!("hash queue failed: {err}"),
+        }
     });
 }
 
@@ -339,6 +431,7 @@ pub fn run() {
             let has_roots = !db::list_roots(&conn).unwrap_or_default().is_empty();
             app.manage(Db(std::sync::Mutex::new(conn)));
             app.manage(ScanState::new());
+            app.manage(HashState::new());
             app.manage(WatchHub::new());
 
             let handle = app.handle().clone();
@@ -371,7 +464,11 @@ pub fn run() {
             load_plate_mesh,
             windows_properties,
             rename_library_file,
-            delete_library_file
+            delete_library_file,
+            get_hash_status,
+            list_duplicate_groups,
+            ignore_duplicate_group,
+            quarantine_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

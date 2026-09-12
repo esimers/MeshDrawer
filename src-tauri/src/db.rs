@@ -42,6 +42,8 @@ pub struct FileRow {
     pub plate_count: i64,
     pub triangle_count: Option<i64>,
     pub last_error: Option<String>,
+    pub sha256: Option<String>,
+    pub ignored_dupe: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -158,7 +160,7 @@ pub fn file_count(conn: &Connection) -> Result<i64> {
 
 pub fn list_files(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
          FROM files
          ORDER BY rel_path COLLATE NOCASE ASC",
     )?;
@@ -190,6 +192,10 @@ pub fn upsert_file(conn: &Connection, rec: &FileRecord) -> Result<i64> {
             thumb_path = CASE
                 WHEN files.size != excluded.size OR files.mtime_ms != excluded.mtime_ms THEN NULL
                 ELSE files.thumb_path
+            END,
+            sha256 = CASE
+                WHEN files.size != excluded.size OR files.mtime_ms != excluded.mtime_ms THEN NULL
+                ELSE files.sha256
             END",
         params![
             rec.root_id,
@@ -285,6 +291,8 @@ fn file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
         plate_count: row.get(9)?,
         triangle_count: row.get(10)?,
         last_error: row.get(11)?,
+        sha256: row.get(12)?,
+        ignored_dupe: row.get::<_, i64>(13)? != 0,
     })
 }
 
@@ -308,7 +316,7 @@ pub fn delete_file_row(conn: &Connection, id: i64) -> Result<()> {
 
 pub fn get_file(conn: &Connection, id: i64) -> Result<Option<FileRow>> {
     conn.query_row(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
          FROM files WHERE id = ?1",
         params![id],
         file_from_row,
@@ -388,7 +396,7 @@ pub fn list_plates(conn: &Connection, file_id: i64) -> Result<Vec<PlateRow>> {
 
 pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
          FROM files
          WHERE (
              thumb_status = 'none'
@@ -408,6 +416,95 @@ pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn pending_hashes(conn: &Connection) -> Result<Vec<FileRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+         FROM files
+         WHERE sha256 IS NULL
+         ORDER BY size ASC",
+    )?;
+    let rows = stmt.query_map([], file_from_row)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn set_sha256(conn: &Connection, id: i64, sha256: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET sha256 = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, sha256, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn list_duplicate_groups(conn: &Connection) -> Result<Vec<crate::hash::DuplicateGroup>> {
+    let mut stmt = conn.prepare(
+        "SELECT sha256 FROM files
+         WHERE sha256 IS NOT NULL AND ignored_dupe = 0
+         GROUP BY sha256
+         HAVING COUNT(*) >= 2
+         ORDER BY COUNT(*) DESC, MAX(size) DESC",
+    )?;
+    let hashes: Vec<String> = {
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        out
+    };
+    let mut groups = Vec::new();
+    for sha in hashes {
+        let mut files_stmt = conn.prepare(
+            "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+             FROM files
+             WHERE sha256 = ?1 AND ignored_dupe = 0
+             ORDER BY rel_path COLLATE NOCASE ASC",
+        )?;
+        let rows = files_stmt.query_map(params![sha], file_from_row)?;
+        let mut files = Vec::new();
+        for row in rows {
+            files.push(row?);
+        }
+        let size = files.first().map(|f| f.size).unwrap_or(0);
+        groups.push(crate::hash::DuplicateGroup {
+            sha256: sha,
+            size,
+            files,
+        });
+    }
+    Ok(groups)
+}
+
+pub fn ignore_hash(conn: &Connection, sha256: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET ignored_dupe = 1, updated_at = ?2 WHERE sha256 = ?1",
+        params![sha256, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
 }
 
 pub fn image_companion_path(conn: &Connection, file_id: i64) -> Result<Option<String>> {
@@ -499,5 +596,39 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn duplicate_groups_by_hash() {
+        let dir = tempdir().unwrap();
+        let conn = open(&dir.path().join("library.db")).unwrap();
+        let (root_id, _) = add_root(&conn, dir.path()).unwrap();
+        let a = FileRecord {
+            root_id,
+            rel_path: "a.stl".into(),
+            abs_path: dir.path().join("a.stl").to_string_lossy().into_owned(),
+            ext: "stl".into(),
+            size: 5,
+            mtime_ms: 1,
+            companions: vec![],
+        };
+        let b = FileRecord {
+            root_id,
+            rel_path: "copy/a.stl".into(),
+            abs_path: dir.path().join("copy-a.stl").to_string_lossy().into_owned(),
+            ext: "stl".into(),
+            size: 5,
+            mtime_ms: 1,
+            companions: vec![],
+        };
+        let id_a = upsert_file(&conn, &a).unwrap();
+        let id_b = upsert_file(&conn, &b).unwrap();
+        set_sha256(&conn, id_a, "abc").unwrap();
+        set_sha256(&conn, id_b, "abc").unwrap();
+        let groups = list_duplicate_groups(&conn).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].files.len(), 2);
+        ignore_hash(&conn, "abc").unwrap();
+        assert!(list_duplicate_groups(&conn).unwrap().is_empty());
     }
 }

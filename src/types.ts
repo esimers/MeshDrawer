@@ -23,6 +23,8 @@ export type FileRow = {
   plateCount: number;
   triangleCount: number | null;
   lastError: string | null;
+  sha256: string | null;
+  ignoredDupe: boolean;
 };
 
 export type SlicerApp = {
@@ -44,6 +46,19 @@ export type ThumbReady = {
   thumbPath: string | null;
   thumbStatus: string;
   plateCount: number;
+};
+
+export type HashProgress = {
+  running: boolean;
+  hashed: number;
+  remaining: number;
+  currentPath: string;
+};
+
+export type DuplicateGroup = {
+  sha256: string;
+  size: number;
+  files: FileRow[];
 };
 
 export type ScanProgress = {

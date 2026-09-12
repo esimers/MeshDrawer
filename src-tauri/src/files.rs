@@ -56,6 +56,30 @@ pub fn rename_on_disk(old: &Path, input: &str) -> Result<PathBuf> {
     Ok(normalize_abs(&dest))
 }
 
+pub fn unique_in_dir(dir: &Path, file_name: &str) -> PathBuf {
+    let dest = dir.join(file_name);
+    if !dest.exists() {
+        return dest;
+    }
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_name.to_string());
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let mut n = 2;
+    loop {
+        let candidate = dir.join(format!("{stem}_{n}{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 pub fn rel_path_for(root: &Path, abs: &Path) -> String {
     match abs.strip_prefix(root) {
         Ok(rel) => to_rel_slash(rel),
@@ -87,6 +111,17 @@ mod tests {
         assert!(sanitized_stem("a/b", "stl").is_err());
         assert!(sanitized_stem("con", "stl").is_err());
         assert!(sanitized_stem("ok name", "stl").unwrap() == "ok name");
+    }
+
+    #[test]
+    fn unique_names_avoid_collisions() {
+        let dir = tempdir().unwrap();
+        File::create(dir.path().join("a.stl")).unwrap();
+        let first = unique_in_dir(dir.path(), "b.stl");
+        assert_eq!(first.file_name().unwrap(), "b.stl");
+        File::create(dir.path().join("b.stl")).unwrap();
+        let second = unique_in_dir(dir.path(), "b.stl");
+        assert_eq!(second.file_name().unwrap(), "b_2.stl");
     }
 
     #[test]

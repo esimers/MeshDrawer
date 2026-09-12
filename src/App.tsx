@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DeleteDialog, PropertiesDialog, RenameDialog } from "./components/Dialogs";
 import { DetailPane } from "./components/DetailPane";
+import { DuplicateView } from "./components/DuplicateView";
 import { FileContextMenu, type FileMenuAction } from "./components/FileContextMenu";
 import { Gallery } from "./components/Gallery";
 import { SplitHandle } from "./components/SplitHandle";
@@ -12,7 +13,9 @@ import { clamp } from "./lib/clamp";
 import { needsMeshThumb, renderOneMeshThumb } from "./lib/meshThumbs";
 import type {
   AppInfo,
+  DuplicateGroup,
   FileRow,
+  HashProgress,
   LibraryRoot,
   ScanProgress,
   SlicerApp,
@@ -22,6 +25,13 @@ import "./App.css";
 
 const DETAIL_WIDTH_KEY = "meshdrewer.detailWidth";
 const DETAIL_WIDTH_DEFAULT = 420;
+
+const emptyHash: HashProgress = {
+  running: false,
+  hashed: 0,
+  remaining: 0,
+  currentPath: "",
+};
 
 const emptyProgress: ScanProgress = {
   running: false,
@@ -65,21 +75,29 @@ function App() {
   const [renameFile, setRenameFile] = useState<FileRow | null>(null);
   const [deleteFile, setDeleteFile] = useState<FileRow | null>(null);
   const [propsFile, setPropsFile] = useState<FileRow | null>(null);
+  const [view, setView] = useState<"gallery" | "dupes">("gallery");
+  const [dupeGroups, setDupeGroups] = useState<DuplicateGroup[]>([]);
+  const [hashProgress, setHashProgress] = useState<HashProgress>(emptyHash);
   const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
-    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers] = await Promise.all([
-      invoke<LibraryRoot[]>("list_roots"),
-      invoke<FileRow[]>("list_files"),
-      invoke<AppInfo>("get_app_info"),
-      invoke<ScanProgress>("get_scan_status"),
-      invoke<SlicerApp[]>("list_slicers"),
-    ]);
+    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers, nextHash, nextDupes] =
+      await Promise.all([
+        invoke<LibraryRoot[]>("list_roots"),
+        invoke<FileRow[]>("list_files"),
+        invoke<AppInfo>("get_app_info"),
+        invoke<ScanProgress>("get_scan_status"),
+        invoke<SlicerApp[]>("list_slicers"),
+        invoke<HashProgress>("get_hash_status"),
+        invoke<DuplicateGroup[]>("list_duplicate_groups"),
+      ]);
     setRoots(nextRoots);
     setFiles(nextFiles);
     setInfo(nextInfo);
     setProgress(nextProgress);
     setSlicers(nextSlicers);
+    setHashProgress(nextHash);
+    setDupeGroups(nextDupes);
   }, []);
 
   useEffect(() => {
@@ -118,6 +136,17 @@ function App() {
       add(
         await listen<ThumbReady>("thumb-ready", (event) => {
           setFiles((prev) => patchThumb(prev, event.payload));
+        }),
+      );
+      add(
+        await listen<HashProgress>("hash-progress", (event) => {
+          setHashProgress(event.payload);
+        }),
+      );
+      add(
+        await listen("hash-complete", () => {
+          void invoke<DuplicateGroup[]>("list_duplicate_groups").then(setDupeGroups);
+          void invoke<HashProgress>("get_hash_status").then(setHashProgress);
         }),
       );
     }
@@ -299,6 +328,9 @@ function App() {
           <p className="truncate text-sm text-zinc-400">
             {files.length} model{files.length === 1 ? "" : "s"}
             {roots.length > 0 ? ` · ${roots.length} folder${roots.length === 1 ? "" : "s"}` : ""}
+            {dupeGroups.length > 0
+              ? ` · ${dupeGroups.length} duplicate group${dupeGroups.length === 1 ? "" : "s"}`
+              : ""}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -311,6 +343,15 @@ function App() {
               {progress.paused ? "Resume" : "Pause"}
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setView(view === "dupes" ? "gallery" : "dupes")}
+            className={`rounded-md border px-3 py-2 text-sm hover:bg-zinc-800 ${
+              view === "dupes" ? "border-teal-500 text-teal-300" : "border-zinc-700"
+            }`}
+          >
+            Duplicates{dupeGroups.length > 0 ? ` (${dupeGroups.length})` : ""}
+          </button>
           <button
             type="button"
             onClick={() => void runRescan()}
@@ -348,6 +389,15 @@ function App() {
         </div>
       ) : null}
 
+      {hashProgress.running ? (
+        <div className="border-b border-zinc-800 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-400">
+          Hashing exact copies · {hashProgress.hashed} done · {hashProgress.remaining} queued
+          <span className="ml-3 max-w-[40%] truncate font-mono text-[11px] text-zinc-600">
+            {hashProgress.currentPath}
+          </span>
+        </div>
+      ) : null}
+
       {error ? (
         <p className="border-b border-red-900 bg-red-950/40 px-4 py-2 text-sm text-red-300">{error}</p>
       ) : null}
@@ -368,6 +418,45 @@ function App() {
             {busy ? "Adding…" : "Add a library folder"}
           </button>
         </section>
+      ) : view === "dupes" ? (
+        <DuplicateView
+          groups={dupeGroups}
+          thumbsDir={info?.thumbsDir ?? null}
+          hashing={hashProgress.running}
+          onReveal={(id) => {
+            void invoke("reveal_in_explorer", { id }).catch((err: unknown) => {
+              setError(err instanceof Error ? err.message : String(err));
+            });
+          }}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setView("gallery");
+          }}
+          onQuarantine={(id) => {
+            void invoke("quarantine_file", { id })
+              .then(() => {
+                setFiles((prev) => prev.filter((f) => f.id !== id));
+                setDupeGroups((prev) =>
+                  prev
+                    .map((g) => ({ ...g, files: g.files.filter((f) => f.id !== id) }))
+                    .filter((g) => g.files.length >= 2),
+                );
+                setSelectedId((current) => (current === id ? null : current));
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+          onIgnore={(sha256) => {
+            void invoke("ignore_duplicate_group", { sha256 })
+              .then(() => {
+                setDupeGroups((prev) => prev.filter((g) => g.sha256 !== sha256));
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+        />
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1">
           <Gallery
