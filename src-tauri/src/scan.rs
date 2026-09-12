@@ -12,7 +12,8 @@ use walkdir::WalkDir;
 use crate::db::{self, CompanionRecord, Db, FileRecord};
 use crate::error::Result;
 use crate::ignore::{
-    companion_kind, extension_lower, is_model_ext, skip_dir_name, skip_file_name, skip_path,
+    companion_kind, extension_lower, is_model_ext, matches_exclude, skip_dir_name, skip_file_name,
+    skip_path,
 };
 use crate::paths::{normalize_abs, to_rel_slash};
 use crate::state::ScanState;
@@ -147,6 +148,7 @@ pub fn walk_root(
     mut on_tick: impl FnMut(u64, u64, &Path),
     should_pause: impl Fn() -> bool,
     cancelled: impl Fn() -> bool,
+    extra_excludes: &[String],
 ) -> Result<(u64, u64, HashSet<String>)> {
     let root = normalize_abs(root);
     let mut seen = 0_u64;
@@ -185,7 +187,7 @@ pub fn walk_root(
         seen += 1;
         on_tick(seen, errors, entry.path());
 
-        if skip_path(entry.path(), false) {
+        if skip_path(entry.path(), false) || matches_exclude(entry.path(), extra_excludes) {
             continue;
         }
 
@@ -224,6 +226,15 @@ pub fn scan_root(
     state: &ScanState,
     mut emit: impl FnMut(ScanProgress),
 ) -> Result<ScanProgress> {
+    let extra_excludes = {
+        let conn = db.0.lock().ok();
+        conn.and_then(|c| db::get_setting(&c, "exclude_patterns").ok().flatten())
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.to_string())
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>()
+    };
     let indexed = Cell::new(0_u64);
     let mut last_emit = Instant::now() - PROGRESS_EVERY;
     let mut current = String::new();
@@ -278,6 +289,7 @@ pub fn scan_root(
         },
         || state.pause.load(Ordering::SeqCst),
         || state.cancel.load(Ordering::SeqCst),
+        &extra_excludes,
     )?;
 
     flush(&mut batch)?;
@@ -343,6 +355,7 @@ mod tests {
             |_, _, _| {},
             || false,
             || false,
+            &[],
         )
         .unwrap();
 

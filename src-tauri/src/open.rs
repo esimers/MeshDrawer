@@ -19,17 +19,27 @@ fn existing(candidates: &[&str]) -> Option<PathBuf> {
 }
 
 pub fn detected_slicers() -> Vec<SlicerApp> {
-    let bambu = existing(&[
+    detected_slicers_with(None, None)
+}
+
+pub fn detected_slicers_with(bambu_override: Option<&str>, orca_override: Option<&str>) -> Vec<SlicerApp> {
+    let bambu = bambu_override
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+        .or_else(|| existing(&[
         r"C:\Program Files\Bambu Studio\bambu-studio.exe",
         r"C:\Program Files\BambuLab\Bambu Studio\bambu-studio.exe",
         r"C:\Program Files\Bambu Lab\Bambu Studio\bambu-studio.exe",
         r"C:\Program Files (x86)\Bambu Studio\bambu-studio.exe",
-    ]);
-    let orca = existing(&[
+        ]));
+    let orca = orca_override
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+        .or_else(|| existing(&[
         r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
         r"C:\Program Files\Orca Slicer\orca-slicer.exe",
         r"C:\Program Files (x86)\OrcaSlicer\orca-slicer.exe",
-    ]);
+        ]));
     vec![
         SlicerApp {
             id: "bambu".into(),

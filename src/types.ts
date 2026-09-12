@@ -25,6 +25,16 @@ export type FileRow = {
   lastError: string | null;
   sha256: string | null;
   ignoredDupe: boolean;
+  notes: string | null;
+  status: string;
+  tags: string[];
+};
+
+export type AppSettings = {
+  quarantineDir: string;
+  bambuPath: string;
+  orcaPath: string;
+  excludePatterns: string;
 };
 
 export type SlicerApp = {

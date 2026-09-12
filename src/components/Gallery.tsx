@@ -118,6 +118,7 @@ export function Gallery({
                       <p className="mt-0.5 text-xs text-zinc-500">
                         {extLabel(file.ext)} · {formatBytes(file.size)}
                         {file.plateCount > 1 ? ` · ${file.plateCount} plates` : ""}
+                        {file.status && file.status !== "unset" ? ` · ${file.status}` : ""}
                       </p>
                     </div>
                   </button>

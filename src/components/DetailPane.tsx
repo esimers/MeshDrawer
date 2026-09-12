@@ -13,6 +13,7 @@ type Props = {
   onClose: () => void;
   onError: (message: string) => void;
   onPlateThumb: (fileId: number, thumbPath: string | null) => void;
+  onFileChange: (file: FileRow) => void;
 };
 
 export function DetailPane({
@@ -22,13 +23,18 @@ export function DetailPane({
   onClose,
   onError,
   onPlateThumb,
+  onFileChange,
 }: Props) {
   const [plates, setPlates] = useState<PlateRow[]>([]);
   const [plateIndex, setPlateIndex] = useState(1);
+  const [tagDraft, setTagDraft] = useState("");
+  const [notes, setNotes] = useState(file.notes ?? "");
   const is3mf = file.ext === "3mf";
   const showStlViewer = file.ext === "stl" || file.ext === "obj";
 
   useEffect(() => {
+    setNotes(file.notes ?? "");
+    setTagDraft("");
     setPlateIndex(1);
     setPlates([]);
     if (!is3mf) {
@@ -164,6 +170,100 @@ export function DetailPane({
           ) : null}
         </dl>
         <p className="mt-3 break-all font-mono text-[11px] text-zinc-500">{file.absPath}</p>
+
+        <label className="mt-4 block text-xs uppercase tracking-wide text-zinc-500">
+          Status
+          <select
+            value={file.status}
+            onChange={(event) => {
+              void invoke<FileRow>("set_file_status", {
+                id: file.id,
+                status: event.target.value,
+              })
+                .then(onFileChange)
+                .catch((err: unknown) => {
+                  onError(err instanceof Error ? err.message : String(err));
+                });
+            }}
+            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+          >
+            <option value="unset">Unset</option>
+            <option value="unprinted">Unprinted</option>
+            <option value="printed">Printed</option>
+            <option value="favorite">Favorite</option>
+          </select>
+        </label>
+
+        <div className="mt-4">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Tags</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {file.tags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => {
+                  void invoke<FileRow>("remove_file_tag", { id: file.id, name: tag })
+                    .then(onFileChange)
+                    .catch((err: unknown) => {
+                      onError(err instanceof Error ? err.message : String(err));
+                    });
+                }}
+                className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-teal-200 hover:bg-zinc-700"
+                title="Remove tag"
+              >
+                {tag} ×
+              </button>
+            ))}
+          </div>
+          <form
+            className="mt-2 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = tagDraft.trim();
+              if (!name) {
+                return;
+              }
+              void invoke<FileRow>("add_file_tag", { id: file.id, name })
+                .then((row) => {
+                  setTagDraft("");
+                  onFileChange(row);
+                })
+                .catch((err: unknown) => {
+                  onError(err instanceof Error ? err.message : String(err));
+                });
+            }}
+          >
+            <input
+              value={tagDraft}
+              onChange={(event) => setTagDraft(event.target.value)}
+              placeholder="Add tag"
+              className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm"
+            />
+            <button type="submit" className="rounded-md border border-zinc-700 px-2 text-xs">
+              Add
+            </button>
+          </form>
+        </div>
+
+        <label className="mt-4 block text-xs uppercase tracking-wide text-zinc-500">
+          Notes
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            onBlur={() => {
+              if ((file.notes ?? "") === notes) {
+                return;
+              }
+              void invoke<FileRow>("set_file_notes", { id: file.id, notes })
+                .then(onFileChange)
+                .catch((err: unknown) => {
+                  onError(err instanceof Error ? err.message : String(err));
+                });
+            }}
+            rows={4}
+            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+          />
+        </label>
       </div>
 
       <div className="space-y-2 border-t border-zinc-800 p-4">

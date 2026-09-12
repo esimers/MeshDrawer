@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use db::{AppInfo, Db, FileRow, LibraryRoot, PlateRow};
+use db::{AppInfo, AppSettings, Db, FileRow, LibraryRoot, PlateRow};
 use hash::{DuplicateGroup, HashProgress, HashState};
 use open::SlicerApp;
 use scan::ScanProgress;
@@ -105,14 +105,44 @@ fn rescan(app: AppHandle, scan: State<ScanState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn list_slicers() -> Vec<SlicerApp> {
-    open::detected_slicers()
+fn list_slicers(db: State<Db>) -> Result<Vec<SlicerApp>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    Ok(slicers_from_db(&conn))
+}
+
+fn slicers_from_db(conn: &rusqlite::Connection) -> Vec<SlicerApp> {
+    let settings = db::load_app_settings(conn).ok();
+    let bambu = settings
+        .as_ref()
+        .map(|s| s.bambu_path.as_str())
+        .filter(|p| !p.is_empty());
+    let orca = settings
+        .as_ref()
+        .map(|s| s.orca_path.as_str())
+        .filter(|p| !p.is_empty());
+    open::detected_slicers_with(bambu, orca)
 }
 
 #[tauri::command]
 fn open_in_slicer(db: State<Db>, id: i64, slicer_id: String) -> Result<(), String> {
     let path = file_abs(&db, id)?;
-    open::open_with(&slicer_id, Path::new(&path)).map_err(String::from)
+    let slicers = {
+        let conn = db.0.lock().map_err(|_| lock_err())?;
+        slicers_from_db(&conn)
+    };
+    if slicer_id == "system" {
+        return open::open_with("system", Path::new(&path)).map_err(String::from);
+    }
+    let exe = slicers
+        .into_iter()
+        .find(|s| s.id == slicer_id && s.available)
+        .and_then(|s| s.path)
+        .ok_or_else(|| format!("{slicer_id} was not found"))?;
+    std::process::Command::new(exe)
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -181,6 +211,67 @@ fn list_duplicate_groups(db: State<Db>) -> Result<Vec<DuplicateGroup>, String> {
 fn ignore_duplicate_group(db: State<Db>, sha256: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::ignore_hash(&conn, &sha256).map_err(String::from)
+}
+
+#[tauri::command]
+fn set_file_notes(db: State<Db>, id: i64, notes: String) -> Result<FileRow, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::set_file_notes(&conn, id, &notes).map_err(String::from)?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .ok_or_else(|| "file not found".into())
+}
+
+#[tauri::command]
+fn set_file_status(db: State<Db>, id: i64, status: String) -> Result<FileRow, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::set_file_status(&conn, id, &status).map_err(String::from)?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .ok_or_else(|| "file not found".into())
+}
+
+#[tauri::command]
+fn list_tags(db: State<Db>) -> Result<Vec<String>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::list_all_tags(&conn).map_err(String::from)
+}
+
+#[tauri::command]
+fn add_file_tag(db: State<Db>, id: i64, name: String) -> Result<FileRow, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::add_file_tag(&conn, id, &name).map_err(String::from)?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .ok_or_else(|| "file not found".into())
+}
+
+#[tauri::command]
+fn remove_file_tag(db: State<Db>, id: i64, name: String) -> Result<FileRow, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::remove_file_tag(&conn, id, &name).map_err(String::from)?;
+    db::get_file(&conn, id)
+        .map_err(String::from)?
+        .ok_or_else(|| "file not found".into())
+}
+
+#[tauri::command]
+fn get_app_settings(db: State<Db>) -> Result<AppSettings, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::load_app_settings(&conn).map_err(String::from)
+}
+
+#[tauri::command]
+fn save_app_settings(db: State<Db>, settings: AppSettings) -> Result<AppSettings, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::save_app_settings(&conn, &settings).map_err(String::from)?;
+    db::load_app_settings(&conn).map_err(String::from)
+}
+
+#[tauri::command]
+fn remove_library_folder(db: State<Db>, id: i64) -> Result<Vec<LibraryRoot>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    db::delete_root(&conn, id).map_err(String::from)
 }
 
 #[tauri::command]
@@ -468,7 +559,15 @@ pub fn run() {
             get_hash_status,
             list_duplicate_groups,
             ignore_duplicate_group,
-            quarantine_file
+            quarantine_file,
+            set_file_notes,
+            set_file_status,
+            list_tags,
+            add_file_tag,
+            remove_file_tag,
+            get_app_settings,
+            save_app_settings,
+            remove_library_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

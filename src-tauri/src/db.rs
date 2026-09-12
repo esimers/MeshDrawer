@@ -44,6 +44,9 @@ pub struct FileRow {
     pub last_error: Option<String>,
     pub sha256: Option<String>,
     pub ignored_dupe: bool,
+    pub notes: Option<String>,
+    pub status: String,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -160,7 +163,7 @@ pub fn file_count(conn: &Connection) -> Result<i64> {
 
 pub fn list_files(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
          FROM files
          ORDER BY rel_path COLLATE NOCASE ASC",
     )?;
@@ -169,6 +172,7 @@ pub fn list_files(conn: &Connection) -> Result<Vec<FileRow>> {
     for row in rows {
         out.push(row?);
     }
+    attach_tags(conn, &mut out)?;
     Ok(out)
 }
 
@@ -293,7 +297,29 @@ fn file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileRow> {
         last_error: row.get(11)?,
         sha256: row.get(12)?,
         ignored_dupe: row.get::<_, i64>(13)? != 0,
+        notes: row.get(14)?,
+        status: row.get(15)?,
+        tags: Vec::new(),
     })
+}
+
+pub fn attach_tags(conn: &Connection, files: &mut [FileRow]) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let mut map = std::collections::HashMap::<i64, Vec<String>>::new();
+    let mut stmt = conn.prepare(
+        "SELECT ft.file_id, t.name FROM file_tags ft JOIN tags t ON t.id = ft.tag_id ORDER BY t.name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?;
+    for row in rows {
+        let (id, name) = row?;
+        map.entry(id).or_default().push(name);
+    }
+    for file in files {
+        file.tags = map.remove(&file.id).unwrap_or_default();
+    }
+    Ok(())
 }
 
 pub fn update_file_location(
@@ -315,14 +341,19 @@ pub fn delete_file_row(conn: &Connection, id: i64) -> Result<()> {
 }
 
 pub fn get_file(conn: &Connection, id: i64) -> Result<Option<FileRow>> {
-    conn.query_row(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
-         FROM files WHERE id = ?1",
-        params![id],
-        file_from_row,
-    )
-    .optional()
-    .map_err(AppError::from)
+    let mut file = conn
+        .query_row(
+            "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
+             FROM files WHERE id = ?1",
+            params![id],
+            file_from_row,
+        )
+        .optional()
+        .map_err(AppError::from)?;
+    if let Some(ref mut row) = file {
+        attach_tags(conn, std::slice::from_mut(row))?;
+    }
+    Ok(file)
 }
 
 pub fn update_thumb(
@@ -396,7 +427,7 @@ pub fn list_plates(conn: &Connection, file_id: i64) -> Result<Vec<PlateRow>> {
 
 pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
          FROM files
          WHERE (
              thumb_status = 'none'
@@ -420,7 +451,7 @@ pub fn pending_thumbs(conn: &Connection) -> Result<Vec<FileRow>> {
 
 pub fn pending_hashes(conn: &Connection) -> Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
          FROM files
          WHERE sha256 IS NULL
          ORDER BY size ASC",
@@ -460,7 +491,7 @@ pub fn list_duplicate_groups(conn: &Connection) -> Result<Vec<crate::hash::Dupli
     let mut groups = Vec::new();
     for sha in hashes {
         let mut files_stmt = conn.prepare(
-            "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe
+            "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
              FROM files
              WHERE sha256 = ?1 AND ignored_dupe = 0
              ORDER BY rel_path COLLATE NOCASE ASC",
@@ -470,6 +501,7 @@ pub fn list_duplicate_groups(conn: &Connection) -> Result<Vec<crate::hash::Dupli
         for row in rows {
             files.push(row?);
         }
+        attach_tags(conn, &mut files)?;
         let size = files.first().map(|f| f.size).unwrap_or(0);
         groups.push(crate::hash::DuplicateGroup {
             sha256: sha,
@@ -496,6 +528,99 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
     )
     .optional()
     .map_err(AppError::from)
+}
+
+pub fn set_file_notes(conn: &Connection, id: i64, notes: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET notes = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, notes, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn set_file_status(conn: &Connection, id: i64, status: &str) -> Result<()> {
+    let status = match status {
+        "unprinted" | "printed" | "favorite" => status,
+        _ => "unset",
+    };
+    conn.execute(
+        "UPDATE files SET status = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, status, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT name FROM tags ORDER BY name COLLATE NOCASE")?;
+    let rows = stmt.query_map([], |row| row.get(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn add_file_tag(conn: &Connection, file_id: i64, name: &str) -> Result<Vec<String>> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(AppError::Message("tag cannot be empty".into()));
+    }
+    conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![name])?;
+    let tag_id: i64 = conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |row| {
+        row.get(0)
+    })?;
+    conn.execute(
+        "INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)",
+        params![file_id, tag_id],
+    )?;
+    let mut file = get_file(conn, file_id)?.ok_or_else(|| AppError::Message("file not found".into()))?;
+    Ok(std::mem::take(&mut file.tags))
+}
+
+pub fn remove_file_tag(conn: &Connection, file_id: i64, name: &str) -> Result<Vec<String>> {
+    conn.execute(
+        "DELETE FROM file_tags WHERE file_id = ?1 AND tag_id = (SELECT id FROM tags WHERE name = ?2)",
+        params![file_id, name],
+    )?;
+    let mut file = get_file(conn, file_id)?.ok_or_else(|| AppError::Message("file not found".into()))?;
+    Ok(std::mem::take(&mut file.tags))
+}
+
+pub fn delete_root(conn: &Connection, id: i64) -> Result<Vec<LibraryRoot>> {
+    conn.execute("DELETE FROM files WHERE root_id = ?1", params![id])?;
+    conn.execute("DELETE FROM roots WHERE id = ?1", params![id])?;
+    list_roots(conn)
+}
+
+pub fn load_app_settings(conn: &Connection) -> Result<AppSettings> {
+    let roots = list_roots(conn)?;
+    let default_q = roots
+        .first()
+        .map(|r| Path::new(&r.path).join(".meshdrewer-quarantine").to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(AppSettings {
+        quarantine_dir: get_setting(conn, "quarantine_dir")?.unwrap_or(default_q),
+        bambu_path: get_setting(conn, "bambu_path")?.unwrap_or_default(),
+        orca_path: get_setting(conn, "orca_path")?.unwrap_or_default(),
+        exclude_patterns: get_setting(conn, "exclude_patterns")?.unwrap_or_default(),
+    })
+}
+
+pub fn save_app_settings(conn: &Connection, settings: &AppSettings) -> Result<()> {
+    set_setting(conn, "quarantine_dir", &settings.quarantine_dir)?;
+    set_setting(conn, "bambu_path", &settings.bambu_path)?;
+    set_setting(conn, "orca_path", &settings.orca_path)?;
+    set_setting(conn, "exclude_patterns", &settings.exclude_patterns)?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub quarantine_dir: String,
+    pub bambu_path: String,
+    pub orca_path: String,
+    pub exclude_patterns: String,
 }
 
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
@@ -630,5 +755,30 @@ mod tests {
         assert_eq!(groups[0].files.len(), 2);
         ignore_hash(&conn, "abc").unwrap();
         assert!(list_duplicate_groups(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tags_notes_and_status() {
+        let dir = tempdir().unwrap();
+        let conn = open(&dir.path().join("library.db")).unwrap();
+        let (root_id, _) = add_root(&conn, dir.path()).unwrap();
+        let rec = FileRecord {
+            root_id,
+            rel_path: "a.stl".into(),
+            abs_path: dir.path().join("a.stl").to_string_lossy().into_owned(),
+            ext: "stl".into(),
+            size: 1,
+            mtime_ms: 1,
+            companions: vec![],
+        };
+        let id = upsert_file(&conn, &rec).unwrap();
+        set_file_notes(&conn, id, "print this").unwrap();
+        set_file_status(&conn, id, "favorite").unwrap();
+        let tags = add_file_tag(&conn, id, "dragon").unwrap();
+        assert_eq!(tags, vec!["dragon"]);
+        let file = get_file(&conn, id).unwrap().unwrap();
+        assert_eq!(file.notes.as_deref(), Some("print this"));
+        assert_eq!(file.status, "favorite");
+        assert_eq!(file.tags, vec!["dragon"]);
     }
 }

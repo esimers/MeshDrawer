@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DeleteDialog, PropertiesDialog, RenameDialog } from "./components/Dialogs";
 import { DetailPane } from "./components/DetailPane";
 import { DuplicateView } from "./components/DuplicateView";
+import { FilterBar } from "./components/FilterBar";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { FileContextMenu, type FileMenuAction } from "./components/FileContextMenu";
 import { Gallery } from "./components/Gallery";
 import { SplitHandle } from "./components/SplitHandle";
 import { fileNameFromRel } from "./lib/files";
 import { clamp } from "./lib/clamp";
 import { needsMeshThumb, renderOneMeshThumb } from "./lib/meshThumbs";
+import { emptyFilter, filterFiles, type FileFilter } from "./lib/search";
 import type {
   AppInfo,
+  AppSettings,
   DuplicateGroup,
   FileRow,
   HashProgress,
@@ -75,13 +79,16 @@ function App() {
   const [renameFile, setRenameFile] = useState<FileRow | null>(null);
   const [deleteFile, setDeleteFile] = useState<FileRow | null>(null);
   const [propsFile, setPropsFile] = useState<FileRow | null>(null);
-  const [view, setView] = useState<"gallery" | "dupes">("gallery");
+  const [view, setView] = useState<"gallery" | "dupes" | "settings">("gallery");
+  const [filter, setFilter] = useState<FileFilter>(emptyFilter);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [dupeGroups, setDupeGroups] = useState<DuplicateGroup[]>([]);
   const [hashProgress, setHashProgress] = useState<HashProgress>(emptyHash);
   const meshBusy = useRef(false);
 
   const refresh = useCallback(async () => {
-    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers, nextHash, nextDupes] =
+    const [nextRoots, nextFiles, nextInfo, nextProgress, nextSlicers, nextHash, nextDupes, nextTags, nextSettings] =
       await Promise.all([
         invoke<LibraryRoot[]>("list_roots"),
         invoke<FileRow[]>("list_files"),
@@ -90,6 +97,8 @@ function App() {
         invoke<SlicerApp[]>("list_slicers"),
         invoke<HashProgress>("get_hash_status"),
         invoke<DuplicateGroup[]>("list_duplicate_groups"),
+        invoke<string[]>("list_tags"),
+        invoke<AppSettings>("get_app_settings"),
       ]);
     setRoots(nextRoots);
     setFiles(nextFiles);
@@ -98,6 +107,8 @@ function App() {
     setSlicers(nextSlicers);
     setHashProgress(nextHash);
     setDupeGroups(nextDupes);
+    setAllTags(nextTags);
+    setSettings(nextSettings);
   }, []);
 
   useEffect(() => {
@@ -318,6 +329,13 @@ function App() {
     }
   }
 
+  const visibleFiles = useMemo(() => filterFiles(files, filter), [files, filter]);
+
+  const patchFile = useCallback((row: FileRow) => {
+    setFiles((prev) => prev.map((file) => (file.id === row.id ? row : file)));
+    void invoke<string[]>("list_tags").then(setAllTags);
+  }, []);
+
   const emptyLibrary = roots.length === 0;
 
   return (
@@ -343,6 +361,15 @@ function App() {
               {progress.paused ? "Resume" : "Pause"}
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setView(view === "settings" ? "gallery" : "settings")}
+            className={`rounded-md border px-3 py-2 text-sm hover:bg-zinc-800 ${
+              view === "settings" ? "border-teal-500 text-teal-300" : "border-zinc-700"
+            }`}
+          >
+            Settings
+          </button>
           <button
             type="button"
             onClick={() => setView(view === "dupes" ? "gallery" : "dupes")}
@@ -418,6 +445,34 @@ function App() {
             {busy ? "Adding…" : "Add a library folder"}
           </button>
         </section>
+      ) : view === "settings" && settings ? (
+        <SettingsPanel
+          settings={settings}
+          roots={roots}
+          onChange={setSettings}
+          onSave={() => {
+            void invoke<AppSettings>("save_app_settings", { settings })
+              .then((saved) => {
+                setSettings(saved);
+                void invoke<SlicerApp[]>("list_slicers").then(setSlicers);
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+          onAddRoot={() => void addFolder()}
+          onRemoveRoot={(id) => {
+            void invoke<LibraryRoot[]>("remove_library_folder", { id })
+              .then((next) => {
+                setRoots(next);
+                void refresh();
+              })
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+          }}
+          onError={setError}
+        />
       ) : view === "dupes" ? (
         <DuplicateView
           groups={dupeGroups}
@@ -458,9 +513,17 @@ function App() {
           }}
         />
       ) : (
+        <>
+        <FilterBar
+          filter={filter}
+          tags={allTags}
+          resultCount={visibleFiles.length}
+          totalCount={files.length}
+          onChange={setFilter}
+        />
         <div className="flex min-h-0 min-w-0 flex-1">
           <Gallery
-            files={files}
+            files={visibleFiles}
             thumbsDir={info?.thumbsDir ?? null}
             selectedId={selectedId}
             thumbOverrides={thumbOverrides}
@@ -487,11 +550,13 @@ function App() {
                   onClose={() => setSelectedId(null)}
                   onError={setError}
                   onPlateThumb={handlePlateThumb}
+                  onFileChange={patchFile}
                 />
               </div>
             </>
           ) : null}
         </div>
+        </>
       )}
 
       {menu ? (
