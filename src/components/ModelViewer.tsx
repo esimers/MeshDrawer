@@ -71,11 +71,50 @@ function addColoredParts(scene: THREE.Scene, payload: Uint8Array): THREE.BufferG
   return geos;
 }
 
+function EnlargeIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+      {expanded ? (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 3v6H3M21 9h-6V3M3 15h6v6M15 21v-6h6"
+        />
+      ) : (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3 9V3h6M15 3h6v6M3 15v6h6M15 21h6v-6"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function ModelViewer({ file, plateIndex = 1 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tooBig, setTooBig] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -87,6 +126,7 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
     let controls: OrbitControls | null = null;
     let geos: THREE.BufferGeometry[] = [];
     let frame = 0;
+    let ro: ResizeObserver | null = null;
 
     setLoading(true);
     setError(null);
@@ -168,6 +208,22 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        rendererRef.current = renderer;
+        cameraRef.current = camera;
+
+        const fitSize = () => {
+          const el = hostRef.current;
+          if (!el || !rendererRef.current || !cameraRef.current) {
+            return;
+          }
+          const nextW = el.clientWidth || 360;
+          const nextH = el.clientHeight || 256;
+          cameraRef.current.aspect = nextW / nextH;
+          cameraRef.current.updateProjectionMatrix();
+          rendererRef.current.setSize(nextW, nextH);
+        };
+        ro = new ResizeObserver(fitSize);
+        ro.observe(host);
 
         const tick = () => {
           if (!renderer || !controls) {
@@ -192,11 +248,14 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
 
     return () => {
       cancelled = true;
+      ro?.disconnect();
       cancelAnimationFrame(frame);
       controls?.dispose();
       geos.forEach((geo) => {
         geo.dispose();
       });
+      rendererRef.current = null;
+      cameraRef.current = null;
       if (renderer) {
         renderer.dispose();
         renderer.forceContextLoss();
@@ -207,24 +266,51 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
   }, [file.id, file.ext, plateIndex]);
 
   return (
-    <div className="relative h-64 w-full overflow-hidden rounded-md bg-md-bg">
-      <div ref={hostRef} className="h-full w-full" />
-      {loading ? (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-md-muted">
-          Loading preview…
-        </p>
+    <>
+      {expanded ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-[70] bg-black/55"
+          aria-label="Close enlarged viewer"
+          onClick={() => setExpanded(false)}
+        />
       ) : null}
-      {error ? (
-        <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-red-300">
-          {error}
-        </p>
-      ) : null}
-      {tooBig ? (
-        <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-md-muted">
-          Preview skipped ({tooBig.toLocaleString()} triangles; cap is 1,000,000). Open
-          in a slicer to inspect.
-        </p>
-      ) : null}
-    </div>
+      <div className={expanded ? "h-64" : undefined}>
+        <div
+          className={
+            expanded
+              ? "fixed inset-6 z-[80] overflow-hidden rounded-lg border border-md-border bg-md-bg shadow-[0_0_24px_rgba(255,43,214,0.25)]"
+              : "relative h-64 w-full overflow-hidden rounded-md bg-md-bg"
+          }
+        >
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            title={expanded ? "Shrink viewer" : "Enlarge viewer"}
+            aria-label={expanded ? "Shrink viewer" : "Enlarge viewer"}
+            className="absolute right-2 top-2 z-10 rounded-md border border-md-border bg-md-surface/90 p-1.5 text-md-cyan hover:border-md-magenta hover:text-md-magenta"
+          >
+            <EnlargeIcon expanded={expanded} />
+          </button>
+          <div ref={hostRef} className="h-full w-full" />
+          {loading ? (
+            <p className="absolute inset-0 flex items-center justify-center text-sm text-md-muted">
+              Loading preview…
+            </p>
+          ) : null}
+          {error ? (
+            <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-red-300">
+              {error}
+            </p>
+          ) : null}
+          {tooBig ? (
+            <p className="absolute inset-0 flex items-center justify-center p-4 text-sm text-md-muted">
+              Preview skipped ({tooBig.toLocaleString()} triangles; cap is 1,000,000). Open
+              in a slicer to inspect.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </>
   );
 }
