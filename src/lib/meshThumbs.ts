@@ -132,17 +132,26 @@ export async function renderOneMeshThumb(file: FileRow): Promise<void> {
 
   let geo: THREE.BufferGeometry;
   if (isCadPreviewExt(file.ext)) {
-    const payload = await invoke("load_preview_mesh", { id: file.id });
-    const parts = decodeMeshBlob(asUint8Array(payload));
-    if (parts.length === 0) {
-      throw new Error("CAD tessellation produced no mesh");
+    try {
+      const payload = await invoke("load_preview_mesh", { id: file.id });
+      const parts = decodeMeshBlob(asUint8Array(payload));
+      if (parts.length === 0) {
+        throw new Error("CAD tessellation produced no mesh");
+      }
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(parts[0].vertices, 3));
+      if (parts[0].indices.length > 0) {
+        geo.setIndex(new THREE.BufferAttribute(parts[0].indices, 1));
+      }
+      geo.computeVertexNormals();
+    } catch (err) {
+      await invoke("set_thumb_status", {
+        id: file.id,
+        status: "failed",
+        triangleCount: null,
+      });
+      throw err;
     }
-    geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(parts[0].vertices, 3));
-    if (parts[0].indices.length > 0) {
-      geo.setIndex(new THREE.BufferAttribute(parts[0].indices, 1));
-    }
-    geo.computeVertexNormals();
   } else {
     const payload = await invoke("read_model_bytes", { id: file.id });
     geo = geometryFromBytes(file.ext, asUint8Array(payload));

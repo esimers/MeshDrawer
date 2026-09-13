@@ -15,7 +15,7 @@ export function isCadPreviewExt(ext: string): boolean {
 }
 
 export function isMeshThumbExt(ext: string): boolean {
-  return ext === "stl" || ext === "obj" || isCadPreviewExt(ext);
+  return ext === "stl" || ext === "obj" || ext === "fbx";
 }
 
 export function fileStem(relPath: string): string {

@@ -133,11 +133,12 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
     setTooBig(null);
 
     const cad = file.ext === "step" || file.ext === "stp" || file.ext === "fbx";
+    const requestId = cad ? `${file.id}-${Date.now()}-${Math.random().toString(36).slice(2)}` : null;
     const load =
       file.ext === "3mf"
         ? invoke("load_plate_mesh", { fileId: file.id, plateIndex })
         : cad
-          ? invoke("load_preview_mesh", { id: file.id })
+          ? invoke("load_preview_mesh", { id: file.id, requestId })
           : invoke("read_model_bytes", { id: file.id });
 
     load
@@ -255,6 +256,9 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
 
     return () => {
       cancelled = true;
+      if (requestId) {
+        void invoke("cancel_preview", { requestId });
+      }
       ro?.disconnect();
       cancelAnimationFrame(frame);
       controls?.dispose();
@@ -302,7 +306,9 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
           <div ref={hostRef} className="h-full w-full" />
           {loading ? (
             <p className="absolute inset-0 flex items-center justify-center text-sm text-md-muted">
-              Loading preview…
+              {file.ext === "step" || file.ext === "stp"
+                ? "Tessellating STEP…"
+                : "Loading preview…"}
             </p>
           ) : null}
           {error ? (

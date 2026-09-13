@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extLabel, fileNameFromRel, fileStem, isCadPreviewExt } from "./files";
+import {
+  extLabel,
+  fileNameFromRel,
+  fileStem,
+  isCadPreviewExt,
+  isMeshThumbExt,
+} from "./files";
 
 describe("fileNameFromRel", () => {
   it("takes the last path segment", () => {
@@ -18,9 +24,20 @@ describe("extLabel", () => {
 describe("isCadPreviewExt", () => {
   it("marks STEP and FBX for tessellated preview", () => {
     expect(isCadPreviewExt("step")).toBe(true);
+    expect(isCadPreviewExt("stp")).toBe(true);
     expect(isCadPreviewExt("fbx")).toBe(true);
     expect(isCadPreviewExt("3dm")).toBe(false);
     expect(isCadPreviewExt("stl")).toBe(false);
+  });
+});
+
+describe("isMeshThumbExt", () => {
+  it("does not auto-thumb STEP files", () => {
+    expect(isMeshThumbExt("stl")).toBe(true);
+    expect(isMeshThumbExt("obj")).toBe(true);
+    expect(isMeshThumbExt("fbx")).toBe(true);
+    expect(isMeshThumbExt("step")).toBe(false);
+    expect(isMeshThumbExt("stp")).toBe(false);
   });
 });
 

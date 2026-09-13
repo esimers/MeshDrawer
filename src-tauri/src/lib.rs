@@ -355,7 +355,11 @@ fn delete_library_file(
 }
 
 #[tauri::command]
-fn load_preview_mesh(db: State<Db>, id: i64) -> Result<Response, String> {
+async fn load_preview_mesh(
+    db: State<'_, Db>,
+    id: i64,
+    request_id: Option<String>,
+) -> Result<Response, String> {
     let file = {
         let conn = db.0.lock().map_err(|_| lock_err())?;
         db::get_file(&conn, id)
@@ -365,9 +369,26 @@ fn load_preview_mesh(db: State<Db>, id: i64) -> Result<Response, String> {
     if !crate::ignore::is_cad_ext(&file.ext) {
         return Err("not a tessellated CAD format".into());
     }
-    let parts = tessellate::tessellate_path(Path::new(&file.abs_path), &file.ext)
-        .map_err(String::from)?;
-    Ok(Response::new(threemf::encode_mesh_blob(&parts)))
+    let path = file.abs_path;
+    let ext = file.ext;
+    let blob = tauri::async_runtime::spawn_blocking(move || {
+        let parts = match request_id.as_deref() {
+            Some(request_id) => {
+                tessellate::tessellate_path_for_request(Path::new(&path), &ext, request_id)
+            }
+            None => tessellate::tessellate_path_timed(Path::new(&path), &ext),
+        }?;
+        Ok::<Vec<u8>, crate::error::AppError>(threemf::encode_mesh_blob(&parts))
+    })
+    .await
+    .map_err(|e| format!("tessellation task failed: {e}"))?
+    .map_err(String::from)?;
+    Ok(Response::new(blob))
+}
+
+#[tauri::command]
+fn cancel_preview(request_id: String) {
+    tessellate::cancel_request(&request_id);
 }
 
 #[tauri::command]
@@ -574,6 +595,7 @@ pub fn run() {
             reveal_in_explorer,
             read_model_bytes,
             load_preview_mesh,
+            cancel_preview,
             save_thumb_png,
             set_thumb_status,
             list_plates,
