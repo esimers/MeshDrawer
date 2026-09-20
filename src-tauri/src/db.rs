@@ -234,6 +234,53 @@ pub fn list_files(conn: &Connection) -> Result<Vec<FileRow>> {
     Ok(out)
 }
 
+pub fn list_files_for_root(conn: &Connection, root_id: i64) -> Result<Vec<FileRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, root_id, rel_path, abs_path, ext, size, mtime_ms, thumb_status, thumb_path, plate_count, triangle_count, last_error, sha256, ignored_dupe, notes, status
+         FROM files
+         WHERE root_id = ?1
+         ORDER BY rel_path COLLATE NOCASE ASC",
+    )?;
+    let rows = stmt.query_map(params![root_id], file_from_row)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    attach_tags(conn, &mut out)?;
+    Ok(out)
+}
+
+pub fn file_id_by_rel(conn: &Connection, root_id: i64, rel_path: &str) -> Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM files WHERE root_id = ?1 AND rel_path = ?2",
+        params![root_id, rel_path],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+pub fn file_id_by_sha256(conn: &Connection, root_id: i64, sha256: &str) -> Result<Option<i64>> {
+    if sha256.is_empty() {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT id FROM files WHERE root_id = ?1 AND sha256 = ?2 LIMIT 1",
+        params![root_id, sha256],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+pub fn set_ignored_dupe(conn: &Connection, id: i64, ignored: bool) -> Result<()> {
+    conn.execute(
+        "UPDATE files SET ignored_dupe = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, if ignored { 1 } else { 0 }, now_ms()],
+    )?;
+    Ok(())
+}
+
 pub fn upsert_file(conn: &Connection, rec: &FileRecord) -> Result<i64> {
     conn.execute(
         "INSERT INTO files (
@@ -644,6 +691,40 @@ pub fn remove_file_tag(conn: &Connection, file_id: i64, name: &str) -> Result<Ve
     Ok(std::mem::take(&mut file.tags))
 }
 
+pub fn add_files_tag(conn: &Connection, ids: &[i64], name: &str) -> Result<Vec<FileRow>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = conn.unchecked_transaction()?;
+    for id in ids {
+        add_file_tag(&tx, *id, name)?;
+    }
+    tx.commit()?;
+    files_by_ids(conn, ids)
+}
+
+pub fn remove_files_tag(conn: &Connection, ids: &[i64], name: &str) -> Result<Vec<FileRow>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = conn.unchecked_transaction()?;
+    for id in ids {
+        remove_file_tag(&tx, *id, name)?;
+    }
+    tx.commit()?;
+    files_by_ids(conn, ids)
+}
+
+fn files_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<FileRow>> {
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(file) = get_file(conn, *id)? {
+            out.push(file);
+        }
+    }
+    Ok(out)
+}
+
 pub fn delete_root(conn: &Connection, id: i64) -> Result<Vec<LibraryRoot>> {
     conn.execute("DELETE FROM files WHERE root_id = ?1", params![id])?;
     conn.execute("DELETE FROM roots WHERE id = ?1", params![id])?;
@@ -838,5 +919,47 @@ mod tests {
         assert_eq!(file.notes.as_deref(), Some("print this"));
         assert_eq!(file.status, "favorite");
         assert_eq!(file.tags, vec!["dragon"]);
+    }
+
+    #[test]
+    fn tags_apply_to_multiple_files() {
+        let dir = tempdir().unwrap();
+        let conn = open(&dir.path().join("library.db")).unwrap();
+        let (root_id, _) = add_root(&conn, dir.path()).unwrap();
+        let id_a = upsert_file(
+            &conn,
+            &FileRecord {
+                root_id,
+                rel_path: "a.stl".into(),
+                abs_path: dir.path().join("a.stl").to_string_lossy().into_owned(),
+                ext: "stl".into(),
+                size: 1,
+                mtime_ms: 1,
+                companions: vec![],
+            },
+        )
+        .unwrap();
+        let id_b = upsert_file(
+            &conn,
+            &FileRecord {
+                root_id,
+                rel_path: "b.stl".into(),
+                abs_path: dir.path().join("b.stl").to_string_lossy().into_owned(),
+                ext: "stl".into(),
+                size: 1,
+                mtime_ms: 1,
+                companions: vec![],
+            },
+        )
+        .unwrap();
+        add_file_tag(&conn, id_a, "gift").unwrap();
+        let tagged = add_files_tag(&conn, &[id_a, id_b], "dragon").unwrap();
+        assert_eq!(tagged.len(), 2);
+        assert!(tagged.iter().all(|f| f.tags.iter().any(|t| t == "dragon")));
+        let after = remove_files_tag(&conn, &[id_a, id_b], "gift").unwrap();
+        let a = after.iter().find(|f| f.id == id_a).unwrap();
+        assert_eq!(a.tags, vec!["dragon"]);
+        let b = after.iter().find(|f| f.id == id_b).unwrap();
+        assert_eq!(b.tags, vec!["dragon"]);
     }
 }

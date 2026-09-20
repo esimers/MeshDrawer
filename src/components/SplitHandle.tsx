@@ -2,10 +2,11 @@ import type { MouseEvent } from "react";
 import { clamp } from "../lib/clamp";
 
 type Props = {
-  onDrag: (widthFromRight: number, containerWidth: number) => void;
+  side?: "start" | "end";
+  onDrag: (size: number, containerWidth: number) => void;
 };
 
-export function SplitHandle({ onDrag }: Props) {
+export function SplitHandle({ side = "end", onDrag }: Props) {
   function startDrag(event: MouseEvent<HTMLDivElement>) {
     event.preventDefault();
     const split = event.currentTarget.parentElement;
@@ -14,7 +15,11 @@ export function SplitHandle({ onDrag }: Props) {
     }
     const onMove = (move: globalThis.MouseEvent) => {
       const rect = split.getBoundingClientRect();
-      onDrag(clamp(rect.right - move.clientX, 240, rect.width - 280), rect.width);
+      const size =
+        side === "start"
+          ? clamp(move.clientX - rect.left, 160, Math.max(160, rect.width - 400))
+          : clamp(rect.right - move.clientX, 240, rect.width - 280);
+      onDrag(size, rect.width);
     };
     const onUp = () => {
       document.body.style.cursor = "";

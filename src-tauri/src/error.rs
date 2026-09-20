@@ -12,6 +12,8 @@ pub enum AppError {
     Path(String),
     #[error("zip error: {0}")]
     Zip(#[from] zip::result::ZipError),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl AppError {

@@ -3,6 +3,7 @@ mod error;
 mod files;
 mod hash;
 mod ignore;
+mod meta;
 mod open;
 mod paths;
 mod scan;
@@ -31,6 +32,29 @@ const MAX_PREVIEW_BYTES: u64 = 200 * 1024 * 1024;
 
 fn lock_err() -> String {
     "database lock poisoned".to_string()
+}
+
+fn persist_sidecar(conn: &rusqlite::Connection, root_id: i64) {
+    if let Err(err) = meta::write_root_sidecar(conn, root_id) {
+        eprintln!("metadata sidecar write failed: {err}");
+    }
+}
+
+fn persist_sidecar_for_file(conn: &rusqlite::Connection, file_id: i64) {
+    if let Ok(Some(file)) = db::get_file(conn, file_id) {
+        persist_sidecar(conn, file.root_id);
+    }
+}
+
+fn persist_sidecar_for_ids(conn: &rusqlite::Connection, ids: &[i64]) {
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if let Ok(Some(file)) = db::get_file(conn, *id) {
+            if seen.insert(file.root_id) {
+                persist_sidecar(conn, file.root_id);
+            }
+        }
+    }
 }
 
 fn file_abs(db: &Db, id: i64) -> Result<String, String> {
@@ -193,6 +217,7 @@ fn rename_library_file(
             let _ = fs::rename(&new_abs, &old);
             return Err(err.to_string());
         }
+        persist_sidecar(&conn, file.root_id);
         rel
     };
     let _ = rel;
@@ -217,13 +242,18 @@ fn list_duplicate_groups(db: State<Db>) -> Result<Vec<DuplicateGroup>, String> {
 #[tauri::command]
 fn ignore_duplicate_group(db: State<Db>, sha256: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
-    db::ignore_hash(&conn, &sha256).map_err(String::from)
+    db::ignore_hash(&conn, &sha256).map_err(String::from)?;
+    if let Err(err) = meta::write_all_sidecars(&conn) {
+        eprintln!("metadata sidecar write failed: {err}");
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn set_file_notes(db: State<Db>, id: i64, notes: String) -> Result<FileRow, String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::set_file_notes(&conn, id, &notes).map_err(String::from)?;
+    persist_sidecar_for_file(&conn, id);
     db::get_file(&conn, id)
         .map_err(String::from)?
         .ok_or_else(|| "file not found".into())
@@ -233,6 +263,7 @@ fn set_file_notes(db: State<Db>, id: i64, notes: String) -> Result<FileRow, Stri
 fn set_file_status(db: State<Db>, id: i64, status: String) -> Result<FileRow, String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::set_file_status(&conn, id, &status).map_err(String::from)?;
+    persist_sidecar_for_file(&conn, id);
     db::get_file(&conn, id)
         .map_err(String::from)?
         .ok_or_else(|| "file not found".into())
@@ -248,6 +279,7 @@ fn list_tags(db: State<Db>) -> Result<Vec<String>, String> {
 fn add_file_tag(db: State<Db>, id: i64, name: String) -> Result<FileRow, String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::add_file_tag(&conn, id, &name).map_err(String::from)?;
+    persist_sidecar_for_file(&conn, id);
     db::get_file(&conn, id)
         .map_err(String::from)?
         .ok_or_else(|| "file not found".into())
@@ -257,9 +289,26 @@ fn add_file_tag(db: State<Db>, id: i64, name: String) -> Result<FileRow, String>
 fn remove_file_tag(db: State<Db>, id: i64, name: String) -> Result<FileRow, String> {
     let conn = db.0.lock().map_err(|_| lock_err())?;
     db::remove_file_tag(&conn, id, &name).map_err(String::from)?;
+    persist_sidecar_for_file(&conn, id);
     db::get_file(&conn, id)
         .map_err(String::from)?
         .ok_or_else(|| "file not found".into())
+}
+
+#[tauri::command]
+fn add_files_tag(db: State<Db>, ids: Vec<i64>, name: String) -> Result<Vec<FileRow>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    let rows = db::add_files_tag(&conn, &ids, &name).map_err(String::from)?;
+    persist_sidecar_for_ids(&conn, &ids);
+    Ok(rows)
+}
+
+#[tauri::command]
+fn remove_files_tag(db: State<Db>, ids: Vec<i64>, name: String) -> Result<Vec<FileRow>, String> {
+    let conn = db.0.lock().map_err(|_| lock_err())?;
+    let rows = db::remove_files_tag(&conn, &ids, &name).map_err(String::from)?;
+    persist_sidecar_for_ids(&conn, &ids);
+    Ok(rows)
 }
 
 #[tauri::command]
@@ -348,7 +397,14 @@ fn delete_library_file(
     trash::delete(&path_buf).map_err(|e| e.to_string())?;
     {
         let conn = db.0.lock().map_err(|_| lock_err())?;
+        let root_id = db::get_file(&conn, id)
+            .ok()
+            .flatten()
+            .map(|file| file.root_id);
         db::delete_file_row(&conn, id).map_err(String::from)?;
+        if let Some(root_id) = root_id {
+            persist_sidecar(&conn, root_id);
+        }
     }
     let _ = app.emit("library-changed", ());
     Ok(())
@@ -509,6 +565,12 @@ fn spawn_scan(app: AppHandle, root_ids: Option<Vec<i64>>) {
                     let _ = app.emit("scan-progress", last.clone());
                 }
             }
+            if let Ok(conn) = db.0.lock() {
+                if let Err(err) = meta::apply_root_sidecar(&conn, root.id) {
+                    eprintln!("metadata sidecar restore failed: {err}");
+                }
+                persist_sidecar(&conn, root.id);
+            }
         }
 
         last.running = false;
@@ -612,6 +674,8 @@ pub fn run() {
             list_tags,
             add_file_tag,
             remove_file_tag,
+            add_files_tag,
+            remove_files_tag,
             get_app_settings,
             save_app_settings,
             remove_library_folder

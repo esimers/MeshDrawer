@@ -2,28 +2,33 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes } from "../lib/format";
 import { extLabel, fileNameFromRel, isCadPreviewExt } from "../lib/files";
+import { tagCoverage } from "../lib/tags";
 import { thumbUrl } from "../lib/thumbUrl";
 import type { FileRow, PlateRow, SlicerApp } from "../types";
 import { ModelViewer } from "./ModelViewer";
 
 type Props = {
   file: FileRow;
+  selectedFiles: FileRow[];
   thumbsDir: string | null;
   slicers: SlicerApp[];
   onClose: () => void;
   onError: (message: string) => void;
   onPlateThumb: (fileId: number, thumbPath: string | null) => void;
   onFileChange: (file: FileRow) => void;
+  onFilesChange: (files: FileRow[]) => void;
 };
 
 export function DetailPane({
   file,
+  selectedFiles,
   thumbsDir,
   slicers,
   onClose,
   onError,
   onPlateThumb,
   onFileChange,
+  onFilesChange,
 }: Props) {
   const [plates, setPlates] = useState<PlateRow[]>([]);
   const [plateIndex, setPlateIndex] = useState(1);
@@ -33,6 +38,9 @@ export function DetailPane({
   const showStlViewer =
     file.ext === "stl" || file.ext === "obj" || isCadPreviewExt(file.ext);
   const is3dm = file.ext === "3dm";
+  const bulk = selectedFiles.length > 1;
+  const tagIds = selectedFiles.map((row) => row.id);
+  const tags = tagCoverage(selectedFiles);
 
   useEffect(() => {
     setNotes(file.notes ?? "");
@@ -83,7 +91,9 @@ export function DetailPane({
   return (
     <aside className="flex h-full min-w-0 flex-1 flex-col bg-md-surface/40">
       <div className="flex items-center justify-between border-b border-md-border px-4 py-3">
-        <h2 className="truncate text-sm font-medium">{fileNameFromRel(file.relPath)}</h2>
+        <h2 className="truncate text-sm font-medium">
+          {bulk ? `${selectedFiles.length} files selected` : fileNameFromRel(file.relPath)}
+        </h2>
         <button
           type="button"
           onClick={onClose}
@@ -203,25 +213,46 @@ export function DetailPane({
         </label>
 
         <div className="mt-4">
-          <p className="text-xs uppercase tracking-wide text-md-muted">Tags</p>
+          <p className="text-xs uppercase tracking-wide text-md-muted">
+            Tags{bulk ? ` · ${selectedFiles.length} files` : ""}
+          </p>
+          {bulk ? (
+            <p className="mt-1 text-[11px] text-md-muted">
+              Add applies to every selected file. A dim tag is only on some — click to add it to
+              the rest.
+            </p>
+          ) : null}
           <div className="mt-1 flex flex-wrap gap-1">
-            {file.tags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => {
-                  void invoke<FileRow>("remove_file_tag", { id: file.id, name: tag })
-                    .then(onFileChange)
-                    .catch((err: unknown) => {
-                      onError(err instanceof Error ? err.message : String(err));
-                    });
-                }}
-                className="rounded-full bg-md-violet/40 px-2 py-0.5 text-xs text-md-cyan hover:bg-md-magenta/40"
-                title="Remove tag"
-              >
-                {tag} ×
-              </button>
-            ))}
+            {tags.map((tag) => {
+              const onAll = tag.count === selectedFiles.length;
+              return (
+                <button
+                  key={tag.name}
+                  type="button"
+                  onClick={() => {
+                    const cmd = onAll ? "remove_files_tag" : "add_files_tag";
+                    void invoke<FileRow[]>(cmd, { ids: tagIds, name: tag.name })
+                      .then(onFilesChange)
+                      .catch((err: unknown) => {
+                        onError(err instanceof Error ? err.message : String(err));
+                      });
+                  }}
+                  className={`rounded-full px-2 py-0.5 text-xs hover:bg-md-magenta/40 ${
+                    onAll
+                      ? "bg-md-violet/40 text-md-cyan"
+                      : "border border-dashed border-md-cyan/50 bg-md-bg text-md-muted"
+                  }`}
+                  title={
+                    onAll
+                      ? "Remove from all selected"
+                      : `On ${tag.count} of ${selectedFiles.length} — click to add to all`
+                  }
+                >
+                  {tag.name}
+                  {onAll ? " ×" : ` ${tag.count}/${selectedFiles.length}`}
+                </button>
+              );
+            })}
           </div>
           <form
             className="mt-2 flex gap-2"
@@ -231,10 +262,10 @@ export function DetailPane({
               if (!name) {
                 return;
               }
-              void invoke<FileRow>("add_file_tag", { id: file.id, name })
-                .then((row) => {
+              void invoke<FileRow[]>("add_files_tag", { ids: tagIds, name })
+                .then((rows) => {
                   setTagDraft("");
-                  onFileChange(row);
+                  onFilesChange(rows);
                 })
                 .catch((err: unknown) => {
                   onError(err instanceof Error ? err.message : String(err));
@@ -244,7 +275,7 @@ export function DetailPane({
             <input
               value={tagDraft}
               onChange={(event) => setTagDraft(event.target.value)}
-              placeholder="Add tag"
+              placeholder={bulk ? "Add tag to selected" : "Add tag"}
               className="min-w-0 flex-1 rounded-md border border-md-border bg-md-bg px-2 py-1 text-sm"
             />
             <button type="submit" className="rounded-md border border-md-border px-2 text-xs">

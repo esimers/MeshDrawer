@@ -1,14 +1,29 @@
 import type { FileFilter } from "../lib/search";
+import { FILE_SORTS, type FileSort, type GalleryView } from "../lib/sort";
 
 type Props = {
   filter: FileFilter;
   tags: string[];
   resultCount: number;
   totalCount: number;
+  sort: FileSort;
+  view: GalleryView;
   onChange: (next: FileFilter) => void;
+  onSort: (sort: FileSort) => void;
+  onView: (view: GalleryView) => void;
 };
 
-export function FilterBar({ filter, tags, resultCount, totalCount, onChange }: Props) {
+export function FilterBar({
+  filter,
+  tags,
+  resultCount,
+  totalCount,
+  sort,
+  view,
+  onChange,
+  onSort,
+  onView,
+}: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-md-border bg-md-surface/70 px-4 py-2">
       <input
@@ -67,6 +82,40 @@ export function FilterBar({ filter, tags, resultCount, totalCount, onChange }: P
         placeholder="Max MB"
         className="w-20 rounded-md border border-md-border bg-md-bg px-2 py-1.5 text-sm"
       />
+      <select
+        value={sort}
+        onChange={(event) => onSort(event.target.value as FileSort)}
+        aria-label="Sort"
+        className="rounded-md border border-md-border bg-md-bg px-2 py-1.5 text-sm"
+      >
+        {FILE_SORTS.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+      <div className="flex overflow-hidden rounded-md border border-md-border">
+        <button
+          type="button"
+          aria-pressed={view === "grid"}
+          onClick={() => onView("grid")}
+          className={`px-2 py-1.5 text-xs ${
+            view === "grid" ? "bg-md-cyan text-md-bg" : "bg-md-bg text-md-muted hover:text-md-text"
+          }`}
+        >
+          Grid
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "list"}
+          onClick={() => onView("list")}
+          className={`px-2 py-1.5 text-xs ${
+            view === "list" ? "bg-md-cyan text-md-bg" : "bg-md-bg text-md-muted hover:text-md-text"
+          }`}
+        >
+          List
+        </button>
+      </div>
       <span className="text-xs text-md-muted">
         {resultCount}/{totalCount}
       </span>

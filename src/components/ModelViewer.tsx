@@ -108,13 +108,14 @@ export function ModelViewer({ file, plateIndex = 1 }: Props) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && expanded) {
+        event.stopImmediatePropagation();
         setExpanded(false);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [expanded]);
 
   useEffect(() => {
     const host = hostRef.current;

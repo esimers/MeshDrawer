@@ -51,6 +51,12 @@ export function SettingsPanel({
       <div className="mx-auto max-w-2xl space-y-8">
         <section>
           <h2 className="text-sm font-semibold">Library folders</h2>
+          <p className="mt-1 text-xs text-md-muted">
+            Tags, notes, print status, and ignored duplicates are saved in a{" "}
+            <span className="font-mono">.meshdrawer</span> folder next to your models. After a
+            reinstall, add the same library folder and MeshDrawer restores them. Thumbnails rebuild
+            on their own.
+          </p>
           <ul className="mt-2 divide-y divide-md-border overflow-hidden rounded-lg border border-md-border">
             {roots.map((root) => (
               <li key={root.id} className="flex items-center justify-between gap-3 px-3 py-2">
